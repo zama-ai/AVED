@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * cmd_reload.c - This file contains the implementation for the command "reload"
- * 
+ *
  * Copyright (c) 2023-present Advanced Micro Devices, Inc. All rights reserved.
  */
 
@@ -59,10 +59,10 @@ enum reload_type {
  * @options:  Ordered list of options passed in at the command line
  * @num_args:  Number of non-option arguments (excluding command)
  * @args:  List of non-option arguments (excluding command)
- * 
+ *
  * `args` may be an invalid pointer. It is the function's responsibility
  * to validate the `num_args` parameter.
- * 
+ *
  * Return: EXIT_SUCCESS or EXIT_FAILURE
  */
 static int do_cmd_reload(struct app_option *options, int num_args, char **args);
@@ -70,7 +70,7 @@ static int do_cmd_reload(struct app_option *options, int num_args, char **args);
 /**
  * parse_reload_type() - Parse the reload type option string into an enum value.
  * @reload_type: The human readable string to parse.
- * 
+ *
  * Return: equivalent enum value or RELOAD_TYPE_INVALID if unknown
  */
 static enum reload_type parse_reload_type(const char *reload_type);
@@ -129,7 +129,7 @@ static enum reload_type parse_reload_type(const char *reload_type)
 		return RELOAD_TYPE_PCI;
 	else if (strcmp(reload_type, "sbr") == 0)
 		return RELOAD_TYPE_SBR;
-	
+
 	return RELOAD_TYPE_INVALID;
 }
 
@@ -190,9 +190,9 @@ static int do_cmd_reload(struct app_option *options, int num_args, char **args)
 		} else {
 			bdf = ami_parse_bdf(bdf_string);
 		}
-		
+
 		break;
-	
+
 	default:
 		break;
 	}
@@ -214,12 +214,12 @@ static int do_cmd_reload(struct app_option *options, int num_args, char **args)
 			APP_ERROR("could not unload driver");
 		}
 		break;
-	
+
 	case RELOAD_TYPE_PCI:
 	{
 		printf("Removing PCI device and rescanning bus...\r\n");
 
-		if ((ret = ami_dev_pci_reload(NULL, bdf_string)) == AMI_STATUS_OK) 
+		if ((ret = ami_dev_pci_reload(NULL, bdf_string)) == AMI_STATUS_OK)
 			printf("Done.\r\n");
 		else
 			APP_API_ERROR("could not perform PCI reset");
@@ -239,7 +239,7 @@ static int do_cmd_reload(struct app_option *options, int num_args, char **args)
 		}
 		break;
 	}
-	
+
 	default:
 		APP_ERROR("invalid reload type");
 		break;
