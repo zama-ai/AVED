@@ -19,8 +19,9 @@
 /*****************************************************************************/
 /* Defines                                                                  */
 /*****************************************************************************/
-#define AMC_PROXY_REQUEST_SIZE	        (512)
-#define AMC_PROXY_RESPONSE_SIZE	        (16)
+#define AMC_PROXY_REQUEST_SIZE          (512)
+#define AMC_PROXY_RESPONSE_SIZE         (16)
+#define AMC_TRIGGERED_COMMAND_ID        (0xF00D)
 
 
 /*****************************************************************************/
@@ -32,10 +33,11 @@
  * @proxy_id: the associated proxy id.
  * @event_id: the event that cause the callback to be invoked.
  * @arg: void ptr containing the proxy command used to raise request.
+ * @ctxt: void ptr containing the amc control context ptr.
  *
  * Return: errno or success code.
  */
-typedef int (amc_proxy_event_callback)(uint8_t proxy_id, uint8_t event_id, void* arg);
+typedef int (amc_proxy_event_callback)(uint8_t proxy_id, uint8_t event_id, void* arg, void* ctxt);
 
 
 /*****************************************************************************/
@@ -50,6 +52,7 @@ typedef int (amc_proxy_event_callback)(uint8_t proxy_id, uint8_t event_id, void*
 enum amc_proxy_event {
         AMC_PROXY_EVENT_RESPONSE_COMPLETE = 0,
         AMC_PROXY_EVENT_RESPONSE_TIMEOUT,
+        AMC_PROXY_EVENT_TRIGGERED_BY_AMC,
 
         MAX_AMC_PROXY_EVENT
 };
@@ -160,7 +163,7 @@ struct amc_proxy_pdi_download_request {
 
 /**
  * struct amc_proxy_partition_copy_request: the partition copy request data
- * 
+ *
  * @src_device: source device
  * @src_part: source partition
  * @dest_device: destination device
@@ -191,6 +194,29 @@ struct amc_proxy_hearbeat_request {
 };
 
 /**
+ * struct amc_proxy_ami_peek_poke: PL register read/write request data
+ *
+ * @type: either a read or a write
+ * @address: the address of memory to be populated with data to be written or read
+ * @length: the length of the read/write
+ * @offset: offset into the address space
+ */
+struct amc_proxy_ami_peek_poke {
+    enum amc_proxy_cmd_rw_request type;
+    uint64_t address;
+    uint32_t length;
+    uint32_t offset;
+};
+
+struct amc_proxy_ami_iop_push {
+    enum amc_proxy_cmd_rw_request type;
+    uint64_t address;
+    uint32_t length;
+    uint32_t offset;
+    bool     dop;
+};
+
+/**
  * struct amc_proxy_eeprom_rw_request: the eeprom read/write request data
  *
  * @type: either a read or a write
@@ -216,12 +242,12 @@ struct amc_proxy_eeprom_rw_request {
  * @length: number of bytes to read/write
  */
 struct amc_proxy_module_rw_request {
-        enum amc_proxy_cmd_rw_request type;
-        uint64_t address;
-        uint8_t device_id;
-        uint8_t page;
-        uint8_t offset;
-        uint8_t length;
+    enum amc_proxy_cmd_rw_request type;
+    uint64_t address;
+    uint8_t device_id;
+    uint8_t page;
+    uint8_t offset;
+    uint8_t length;
 };
 
 /**
@@ -236,13 +262,13 @@ struct amc_proxy_module_rw_request {
  * @link_ver_minor: GCQ minor version number
  */
 struct amc_proxy_identify_response {
-        uint8_t ver_major;
-        uint8_t ver_minor;
-        uint8_t ver_patch;
-        uint8_t local_changes;
-        uint16_t dev_commits;
-        uint8_t link_ver_major;
-        uint8_t link_ver_minor;
+    uint8_t ver_major;
+    uint8_t ver_minor;
+    uint8_t ver_patch;
+    uint8_t local_changes;
+    uint16_t dev_commits;
+    uint8_t link_ver_major;
+    uint8_t link_ver_minor;
 };
 
 /**
@@ -251,7 +277,7 @@ struct amc_proxy_identify_response {
  * @request_id: the id associated with the request/response
  */
 struct amc_proxy_heartbeat_response {
-        uint8_t request_id;
+    uint8_t request_id;
 };
 
 /**
@@ -272,19 +298,19 @@ struct amc_proxy_heartbeat_response {
  * @timed_out: boolean indicating if this command timed out
  */
 struct amc_proxy_cmd_struct{
-	struct list_head        cmd_list;
-	struct completion       cmd_complete;
-        struct completion       cmd_complete_heartbeat;
-	uintptr_t               cmd_timeout_jiffies;
-	int                     cmd_rcode;
-       	uint16_t                cmd_cid;
-       	uint64_t                cmd_response;
-        uint32_t                cmd_response_code;
-       	void                    *cmd_arg;
-        FW_IF_CFG               *cmd_fw_if_gcq;
-        bool                    cmd_suppress_dbg;
-        uint32_t                cmd_opcode;
-        bool                    timed_out;
+    struct list_head        cmd_list;
+    struct completion       cmd_complete;
+    struct completion       cmd_complete_heartbeat;
+    uintptr_t               cmd_timeout_jiffies;
+    int                     cmd_rcode;
+    uint16_t                cmd_cid;
+    uint64_t                cmd_response;
+    uint32_t                cmd_response_code;
+    void                    *cmd_arg;
+    FW_IF_CFG               *cmd_fw_if_gcq;
+    bool                    cmd_suppress_dbg;
+    uint32_t                cmd_opcode;
+    bool                    timed_out;
 };
 
 
@@ -296,11 +322,11 @@ struct amc_proxy_cmd_struct{
  * amc_proxy_init() - Initialise the amc proxy layer
  *
  * @proxy_id: unique id to the proxy layer
- * @fw_if_handle: handle to the fw interface
+ * @amc_ctrl_ctxt: handle to the AMC control context
  *
  * Return: The errno return code
  */
-int amc_proxy_init(uint8_t proxy_id, FW_IF_CFG *fw_if_handle);
+int amc_proxy_init(uint8_t proxy_id, void *amc_ctrl_ctxt);
 
 /**
  * amc_proxy_bind_callback() - Bind in the an event callback
@@ -316,7 +342,7 @@ int amc_proxy_bind_callback(FW_IF_CFG *fw_if_handle, amc_proxy_event_callback *e
  * amc_proxy_close() - Close the amc proxy layer and free up resources
  *
  * @fw_if_handle: handle to the fw interface
- * 
+ *
  * Return: The errno return code
  */
 int amc_proxy_close(const FW_IF_CFG *fw_if_handle);
@@ -334,7 +360,7 @@ int amc_proxy_request_abort(struct amc_proxy_cmd_struct *cmd);
  * amc_proxy_request_identity() - Request the identify
  *
  * @cmd: the proxy command structure
- * 
+ *
  * Return: The errno return code
  */
 int amc_proxy_request_identity(struct amc_proxy_cmd_struct *cmd);
@@ -364,10 +390,10 @@ int amc_proxy_request_pdi_download(struct amc_proxy_cmd_struct *cmd,
 
 /**
  * amc_proxy_request_device_boot() - Select device boot partition
- * 
+ *
  * @cmd: the proxy command structure
  * @device_boot: a structure populated with the boot select request
- * 
+ *
  * This request uses the same structure as the PDI download.
  *
  * Return: The errno return code
@@ -377,10 +403,10 @@ int amc_proxy_request_device_boot(struct amc_proxy_cmd_struct *cmd,
 
 /**
  * amc_proxy_request_partition_copy() - Copy one partition to another
- * 
+ *
  * @cmd: the proxy command structure
  * @partition_copy: a structure populated with the partition copy request
- * 
+ *
  * Return: The errno return code
  */
 int amc_proxy_request_partition_copy(struct amc_proxy_cmd_struct *cmd,
@@ -388,14 +414,20 @@ int amc_proxy_request_partition_copy(struct amc_proxy_cmd_struct *cmd,
 
 /**
  * amc_proxy_request_heartbeat() - heartbeat request
- * 
+ *
  * @cmd: the proxy command structure
  * @heartbeat: a structure populated with the heartbeat request
- * 
+ *
  * Return: The errno return code
  */
 int amc_proxy_request_heartbeat(struct amc_proxy_cmd_struct *cmd,
                                 struct amc_proxy_hearbeat_request *heartbeat);
+
+int amc_proxy_request_peek_poke(struct amc_proxy_cmd_struct *cmd,
+                                struct amc_proxy_ami_peek_poke *peek_poke);
+
+int amc_proxy_request_iop_push(struct amc_proxy_cmd_struct *cmd,
+                               struct amc_proxy_ami_iop_push *iop_push);
 
 /**
  * amc_proxy_request_eeprom_read_write() - eeprom read/write request
@@ -437,14 +469,14 @@ int amc_proxy_request_debug_verbosity(struct amc_proxy_cmd_struct *cmd, uint8_t 
  *
  * Return: The errno return code
  */
-int amc_proxy_get_response_identity(struct amc_proxy_cmd_struct *cmd, 
+int amc_proxy_get_response_identity(struct amc_proxy_cmd_struct *cmd,
                                     struct amc_proxy_identify_response *identity);
 
 /**
  * amc_proxy_get_response_sensor() - check if a valid sensor response has been received
  *
  * @cmd: the proxy command structure
- * 
+ *
  * As part of a sensor request an address and length is passed to be populated, this
  * api is to check if its now valid to consume that data.
  *
@@ -476,19 +508,19 @@ int amc_proxy_get_response_device_boot(struct amc_proxy_cmd_struct *cmd);
 
 /**
  * amc_proxy_get_response_partition_copy() - retrieve the partition copy response
- * 
+ *
  * @cmd: the proxy command structure
- * 
+ *
  * Return: The errno return code
  */
 int amc_proxy_get_response_partition_copy(struct amc_proxy_cmd_struct *cmd);
 
 /**
  * amc_proxy_get_response_heartbeat() - retrieve the heartbeat response
- * 
+ *
  * @cmd: the proxy command structure
  * @heartbeat: the structure to be populated with the response
- * 
+ *
  * Return: The errno return code
  */
 int amc_proxy_get_response_heartbeat(struct amc_proxy_cmd_struct *cmd,
@@ -502,6 +534,10 @@ int amc_proxy_get_response_heartbeat(struct amc_proxy_cmd_struct *cmd,
  * Return: The errno return code
  */
 int amc_proxy_get_response_eeprom_read_write(struct amc_proxy_cmd_struct *cmd);
+
+int amc_proxy_get_response_peek_poke(struct amc_proxy_cmd_struct *cmd);
+
+int amc_proxy_get_response_iop_push(struct amc_proxy_cmd_struct *cmd);
 
 /**
  * amc_proxy_get_response_module_read_write() - retrieve the module read/write response

@@ -23,6 +23,8 @@
 #include "ami_pcie.h"
 #include "ami_program.h"
 #include "ami_eeprom.h"
+#include "ami_peekpoke.h"
+#include "ami_iop_push.h"
 #include "ami_utils.h"
 #include "ami_module.h"
 
@@ -38,15 +40,15 @@ static int dev_major = 0;  /* This will be overriden. */
  * devnode() - Callback to return device permissions.
  * @dev: Pointer to device struct.
  * @mode: Pointer to store permission bits.
- * 
+ *
  * Return: NULL.
  */
 static char *devnode(struct device *dev, umode_t *mode)
 {
-	if (mode)
-		*mode = READ_WRITE;
+    if (mode)
+        *mode = READ_WRITE;
 
-	return NULL;
+    return NULL;
 }
 
 /*
@@ -54,16 +56,16 @@ static char *devnode(struct device *dev, umode_t *mode)
  */
 int dev_open(struct inode *inode, struct file *filp)
 {
-	if (!inode || !filp)
-		return -EINVAL;
-	
-	/* This already checks the minor number */
-	filp->private_data = get_pf_dev_entry((void*)inode, PF_DEV_CACHE_INODE);
+    if (!inode || !filp)
+        return -EINVAL;
 
-	if (!filp->private_data)
-		return -ENODEV;
+    /* This already checks the minor number */
+    filp->private_data = get_pf_dev_entry((void*)inode, PF_DEV_CACHE_INODE);
 
-	return 0;
+    if (!filp->private_data)
+        return -ENODEV;
+
+    return 0;
 }
 
 /*
@@ -71,13 +73,13 @@ int dev_open(struct inode *inode, struct file *filp)
  */
 int dev_close(struct inode *inode, struct file *filp)
 {
-	if (!inode || !filp)
-		return -EINVAL;
+    if (!inode || !filp)
+        return -EINVAL;
 
-	if (filp->private_data)
-		put_pf_dev_entry((struct pf_dev_struct*)filp->private_data);
+    if (filp->private_data)
+        put_pf_dev_entry((struct pf_dev_struct*)filp->private_data);
 
-	return 0;
+    return 0;
 }
 
 /*
@@ -85,400 +87,403 @@ int dev_close(struct inode *inode, struct file *filp)
  */
 long dev_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
-	int ret = 0;
-	struct pf_dev_struct *pf_dev = NULL;
-	/* eventfd is used for sending notifications to the user */
-	struct eventfd_ctx *efd_ctx = NULL;
+    int ret = 0;
+    struct pf_dev_struct *pf_dev = NULL;
+    /* eventfd is used for sending notifications to the user */
+    struct eventfd_ctx *efd_ctx = NULL;
 
-	if (!filp)
-		return -EINVAL;
+    if (!filp)
+        return -EINVAL;
 
-	/*
-	 * Extract the type and number bitfields, and don't decode
-	 * wrong cmds: return ENOTTY (inappropriate ioctl) before access_ok(  )
-	 */
-	if(_IOC_TYPE(cmd) != AMI_IOC_MAGIC) return -ENOTTY;
-	if(_IOC_NR(cmd) > AMI_IOC_MAX) return -ENOTTY;
+    /*
+     * Extract the type and number bitfields, and don't decode
+     * wrong cmds: return ENOTTY (inappropriate ioctl) before access_ok(  )
+     */
+    if(_IOC_TYPE(cmd) != AMI_IOC_MAGIC) return -ENOTTY;
+    if(_IOC_NR(cmd) > AMI_IOC_MAX) return -ENOTTY;
 
-	if(!access_ok((void __user*)arg, _IOC_SIZE(cmd)))
-		return -ENOTTY;
-	
-	/* This is is already reference counted  */
-	pf_dev = filp->private_data;
+    if(!access_ok((void __user*)arg, _IOC_SIZE(cmd)))
+        return -ENOTTY;
 
-	/* Check device data */
-	if (!pf_dev) {
-		PR_ERR("dev_unlocked_ioctl: unable to find card");
-		return -ENODEV;
-	}
+    /* This is is already reference counted  */
+    pf_dev = filp->private_data;
 
-	/* Check device state */
-	switch (cmd) {
-	/* READY, MISSING_INFO or COMPAT only */
-	case AMI_IOC_DOWNLOAD_PDI:
-	case AMI_IOC_DEVICE_BOOT:
-		switch (pf_dev->state) {
-		case PF_DEV_STATE_COMPAT:
-		case PF_DEV_STATE_READY:
-		case PF_DEV_STATE_MISSING_INFO:
-			break;
-		
-		default:
-			return -EPERM;
-		}
-		break;
+    /* Check device data */
+    if (!pf_dev) {
+        PR_ERR("dev_unlocked_ioctl: unable to find card");
+        return -ENODEV;
+    }
 
-	/* Any state except INIT and SHUTDOWN */
-	case AMI_IOC_READ_BAR:
-	case AMI_IOC_WRITE_BAR:
-	case AMI_IOC_APP_SETUP:
-		switch (pf_dev->state) {
-		case PF_DEV_STATE_INIT:
-		case PF_DEV_STATE_SHUTDOWN:
-			return -EPERM;
+    /* Check device state */
+    switch (cmd) {
+    /* READY, MISSING_INFO or COMPAT only */
+    case AMI_IOC_DOWNLOAD_PDI:
+    case AMI_IOC_DEVICE_BOOT:
+        switch (pf_dev->state) {
+        case PF_DEV_STATE_COMPAT:
+        case PF_DEV_STATE_READY:
+        case PF_DEV_STATE_MISSING_INFO:
+            break;
 
-		default:
-			break;
-		}
-		break;
+        default:
+            return -EPERM;
+        }
+        break;
 
-	/* READY or MISSING_INFO only */
-	case AMI_IOC_GET_SENSOR_VALUE:
-	case AMI_IOC_COPY_PARTITION:
-	case AMI_IOC_SET_SENSOR_REFRESH:
-	case AMI_IOC_GET_FPT_HDR:
-	case AMI_IOC_GET_FPT_PARTITION:
-	case AMI_IOC_READ_EEPROM:
-	case AMI_IOC_WRITE_EEPROM:
-	case AMI_IOC_READ_MODULE:
-	case AMI_IOC_WRITE_MODULE:
-	case AMI_IOC_DEBUG_VERBOSITY:
-		switch (pf_dev->state) {
-		case PF_DEV_STATE_READY:
-		case PF_DEV_STATE_MISSING_INFO:
-			break;
-		
-		default:
-			return -EPERM;
-		}
-		break;
+    /* Any state except INIT and SHUTDOWN */
+    case AMI_IOC_READ_BAR:
+    case AMI_IOC_WRITE_BAR:
+    case AMI_IOC_APP_SETUP:
+        switch (pf_dev->state) {
+        case PF_DEV_STATE_INIT:
+        case PF_DEV_STATE_SHUTDOWN:
+            return -EPERM;
 
-	default:
-		break;
-	}
+        default:
+            break;
+        }
+        break;
 
-	/* Acquire semaphore */
-	if (down_interruptible(&(pf_dev->ioctl_sema)))
-		return -ERESTARTSYS;
-	
-	if (pf_dev->state == PF_DEV_STATE_COMPAT)
-		PR_WARN("Performing IOCTL request in compatibility mode - you may experience issues!");
+    /* READY or MISSING_INFO only */
+    case AMI_IOC_GET_SENSOR_VALUE:
+    case AMI_IOC_COPY_PARTITION:
+    case AMI_IOC_SET_SENSOR_REFRESH:
+    case AMI_IOC_GET_FPT_HDR:
+    case AMI_IOC_GET_FPT_PARTITION:
+    case AMI_IOC_READ_EEPROM:
+    case AMI_IOC_WRITE_EEPROM:
+    case AMI_IOC_PEEK:
+    case AMI_IOC_IOP_PUSH:
+    case AMI_IOC_POKE:
+    case AMI_IOC_READ_MODULE:
+    case AMI_IOC_WRITE_MODULE:
+    case AMI_IOC_DEBUG_VERBOSITY:
+        switch (pf_dev->state) {
+        case PF_DEV_STATE_READY:
+        case PF_DEV_STATE_MISSING_INFO:
+            break;
 
-	/* Handle command */
-	switch (cmd) {
-	case AMI_IOC_SET_SENSOR_REFRESH:
-	{
-		/*
-		 * This does the same thing as writing to the `update_interval`
-		 * hwmon file, but we do not require any sudo permissions here.
-		 */
-		pf_dev->sensor_refresh = (uint16_t)arg;
-		break;
-	}
+        default:
+            return -EPERM;
+        }
+        break;
 
-	case AMI_IOC_DOWNLOAD_PDI:
-	{
-		/*
-		 * `arg` is a pointer to the `ami_ioc_data_payload` struct
-		 * This struct contains the address of the actual data buffer.
-		 */
-		struct ami_ioc_data_payload data = { 0 };
-		uint8_t *buf = NULL;
+    default:
+        break;
+    }
 
-		/* Check PF - currently only PF0 supported for this command. */
-		if (pf_dev->pcie_function_num != 0) {
-			ret = -ENODEV;
-			goto done;
-		}
+    /* Acquire semaphore */
+    if (down_interruptible(&(pf_dev->ioctl_sema)))
+        return -ERESTARTSYS;
 
-		/* Read data payload from user. */
-		if (copy_from_user(&data, (struct ami_ioc_data_payload*)arg, sizeof(data))) {
-			ret = -EFAULT; /* Bad address */
-			goto done;
-		}
+    if (pf_dev->state == PF_DEV_STATE_COMPAT)
+        PR_WARN("Performing IOCTL request in compatibility mode - you may experience issues!");
 
-		/* Check permissions. */
-		if (!(data.cap_override || IS_ROOT_USER(current_uid().val, current_euid().val))) {
-			ret = -EPERM;
-			goto done;
-		}
-		
-		if ((data.size <= 0) || (data.addr == 0)) {
-			ret = -EINVAL;
-			goto done;
-		}
+    /* Handle command */
+    switch (cmd) {
+    case AMI_IOC_SET_SENSOR_REFRESH:
+    {
+        /*
+         * This does the same thing as writing to the `update_interval`
+         * hwmon file, but we do not require any sudo permissions here.
+         */
+        pf_dev->sensor_refresh = (uint16_t)arg;
+        break;
+    }
 
-		/*
-		 * Using vzalloc because the PDI buffer will be too large
-		 * for kzalloc (around 4-6MB)
-		 */
-		buf = vzalloc(data.size);
+    case AMI_IOC_DOWNLOAD_PDI:
+    {
+        /*
+         * `arg` is a pointer to the `ami_ioc_data_payload` struct
+         * This struct contains the address of the actual data buffer.
+         */
+        struct ami_ioc_data_payload data = { 0 };
+        uint8_t *buf = NULL;
 
-		if (!buf) {
-			ret = -ENOMEM;
-			goto done;
-		}
+        /* Check PF - currently only PF0 supported for this command. */
+        if (pf_dev->pcie_function_num != 0) {
+            ret = -ENODEV;
+            goto done;
+        }
 
-		if (data.efd >= 0)
-			efd_ctx = eventfd_ctx_fdget(data.efd);
+        /* Read data payload from user. */
+        if (copy_from_user(&data, (struct ami_ioc_data_payload*)arg, sizeof(data))) {
+            ret = -EFAULT; /* Bad address */
+            goto done;
+        }
 
-		/* Read actual data buffer. `addr` is a pointer to uint8_t */
-		if(!copy_from_user(buf, (uint8_t*)data.addr, data.size)) {
-			if (data.partition == AMI_IOC_FPT_UPDATE_MAGIC)
-				ret = update_fpt(
-					pf_dev,
-					buf,
-					data.size,
-					data.boot_device,
-					efd_ctx
-				);
-			else
-				ret = download_pdi(
-					pf_dev->amc_ctrl_ctxt,
-					buf,
-					data.size,
-					data.boot_device,
-					data.partition,
-					efd_ctx
-				);
-		} else {
-			ret = -EFAULT;
-		}
+        /* Check permissions. */
+        if (!(data.cap_override || IS_ROOT_USER(current_uid().val, current_euid().val))) {
+            ret = -EPERM;
+            goto done;
+        }
 
-		vfree(buf);
-		break;
-	}
+        if ((data.size <= 0) || (data.addr == 0)) {
+            ret = -EINVAL;
+            goto done;
+        }
 
-	case AMI_IOC_DEVICE_BOOT:
-	{
-		/*
-		 * `arg` is a pointer to the `ami_ioc_data_payload` struct.
-		 * Only the `partition` field should be populated.
-		 */
-		struct ami_ioc_data_payload data = { 0 };
+        /*
+         * Using vzalloc because the PDI buffer will be too large
+         * for kzalloc (around 4-6MB)
+         */
+        buf = vzalloc(data.size);
 
-		/* Check PF - currently only PF0 supported for this command. */
-		if (pf_dev->pcie_function_num != 0) {
-			ret = -ENODEV;
-			goto done;
-		}
+        if (!buf) {
+            ret = -ENOMEM;
+            goto done;
+        }
 
-		/* Read data payload from user. */
-		if (copy_from_user(&data, (struct ami_ioc_data_payload*)arg, sizeof(data))) {
-			ret = -EFAULT; /* Bad address */
-			goto done;
-		}
+        if (data.efd >= 0)
+            efd_ctx = eventfd_ctx_fdget(data.efd);
 
-		/* Check permissions. */
-		if (!(data.cap_override || IS_ROOT_USER(current_uid().val, current_euid().val))) {
-			ret = -EPERM;
-			goto done;
-		}
+        /* Read actual data buffer. `addr` is a pointer to uint8_t */
+        if(!copy_from_user(buf, (uint8_t*)data.addr, data.size)) {
+            if (data.partition == AMI_IOC_FPT_UPDATE_MAGIC)
+                ret = update_fpt(
+                    pf_dev,
+                    buf,
+                    data.size,
+                    data.boot_device,
+                    efd_ctx
+                );
+            else
+                ret = download_pdi(
+                    pf_dev->amc_ctrl_ctxt,
+                    buf,
+                    data.size,
+                    data.boot_device,
+                    data.partition,
+                    efd_ctx
+                );
+        } else {
+            ret = -EFAULT;
+        }
 
-		ret = device_boot(pf_dev, data.partition);
+        vfree(buf);
+        break;
+    }
 
-		break;
-	}
+    case AMI_IOC_DEVICE_BOOT:
+    {
+        /*
+         * `arg` is a pointer to the `ami_ioc_data_payload` struct.
+         * Only the `partition` field should be populated.
+         */
+        struct ami_ioc_data_payload data = { 0 };
 
-	case AMI_IOC_COPY_PARTITION:
-	{
-		/*
-		 * `arg` is a pointer to the `ami_ioc_data_payload` struct.
-		 * Only the `partition` field should be populated.
-		 */
-		struct ami_ioc_data_payload data = { 0 };
+        /* Check PF - currently only PF0 supported for this command. */
+        if (pf_dev->pcie_function_num != 0) {
+            ret = -ENODEV;
+            goto done;
+        }
 
-		/* Check PF - currently only PF0 supported for this command. */
-		if (pf_dev->pcie_function_num != 0) {
-			ret = -ENODEV;
-			goto done;
-		}
+        /* Read data payload from user. */
+        if (copy_from_user(&data, (struct ami_ioc_data_payload*)arg, sizeof(data))) {
+            ret = -EFAULT; /* Bad address */
+            goto done;
+        }
 
-		/* Read data payload from user. */
-		if (copy_from_user(&data, (struct ami_ioc_data_payload*)arg, sizeof(data))) {
-			ret = -EFAULT; /* Bad address */
-			goto done;
-		}
+        /* Check permissions. */
+        if (!(data.cap_override || IS_ROOT_USER(current_uid().val, current_euid().val))) {
+            ret = -EPERM;
+            goto done;
+        }
 
-		/* Check permissions. */
-		if (!(data.cap_override || IS_ROOT_USER(current_uid().val, current_euid().val))) {
-			ret = -EPERM;
-			goto done;
-		}
+        ret = device_boot(pf_dev, data.partition);
 
-		ret = copy_partition(pf_dev, data.src_device, data.src_part, data.dest_device, data.dest_part);
-		break;
-	}
+        break;
+    }
+
+    case AMI_IOC_COPY_PARTITION:
+    {
+        /*
+         * `arg` is a pointer to the `ami_ioc_data_payload` struct.
+         * Only the `partition` field should be populated.
+         */
+        struct ami_ioc_data_payload data = { 0 };
+
+        /* Check PF - currently only PF0 supported for this command. */
+        if (pf_dev->pcie_function_num != 0) {
+            ret = -ENODEV;
+            goto done;
+        }
+
+        /* Read data payload from user. */
+        if (copy_from_user(&data, (struct ami_ioc_data_payload*)arg, sizeof(data))) {
+            ret = -EFAULT; /* Bad address */
+            goto done;
+        }
+
+        /* Check permissions. */
+        if (!(data.cap_override || IS_ROOT_USER(current_uid().val, current_euid().val))) {
+            ret = -EPERM;
+            goto done;
+        }
+
+        ret = copy_partition(pf_dev, data.src_device, data.src_part, data.dest_device, data.dest_part);
+        break;
+    }
 
         case AMI_IOC_READ_BAR:
-	{
-		/*
-		 * `arg` is a pointer to the `ami_ioc_bar_data` struct.
-		 */
-		uint32_t *buf = NULL;
-		struct ami_ioc_bar_data data = { 0 };
+    {
+        /*
+         * `arg` is a pointer to the `ami_ioc_bar_data` struct.
+         */
+        uint32_t *buf = NULL;
+        struct ami_ioc_bar_data data = { 0 };
 
-		/* Read data payload. */
-		if (copy_from_user(&data, (struct ami_ioc_bar_data*)arg, sizeof(data))) {
-			ret = -EFAULT;
-			goto done;
-		}
+        /* Read data payload. */
+        if (copy_from_user(&data, (struct ami_ioc_bar_data*)arg, sizeof(data))) {
+            ret = -EFAULT;
+            goto done;
+        }
 
-		/* Check permissions. */
-		if (!(data.cap_override || IS_ROOT_USER(current_uid().val, current_euid().val))) {
-			ret = -EPERM;
-			goto done;
-		}
+        /* Check permissions. */
+        if (!(data.cap_override || IS_ROOT_USER(current_uid().val, current_euid().val))) {
+            ret = -EPERM;
+            goto done;
+        }
 
-		if ((data.num <= 0) || (data.addr == 0)) {
-			ret = -EINVAL;
-			goto done;
-		}
+        if ((data.num <= 0) || (data.addr == 0)) {
+            ret = -EINVAL;
+            goto done;
+        }
 
-		/* Allocate memory for response buffer. */
-		buf = vzalloc(data.num * sizeof(uint32_t));
+        /* Allocate memory for response buffer. */
+        buf = vzalloc(data.num * sizeof(uint32_t));
 
-		if (!buf) {
-			ret = -ENOMEM;
-			goto done;
-		}
-		
-		/* We will write the response to the userspace address. */
-		ret = read_pcie_bar(pf_dev->pci, data.bar_idx,
-			data.offset, data.num, buf);
+        if (!buf) {
+            ret = -ENOMEM;
+            goto done;
+        }
 
-		if (!ret)
-			ret = copy_to_user((uint32_t*)data.addr, buf,
-				data.num * sizeof(uint32_t));
+        /* We will write the response to the userspace address. */
+        ret = read_pcie_bar(pf_dev->pci, data.bar_idx,
+            data.offset, data.num, buf);
 
-		vfree(buf);
-		break;
-	}
+        if (!ret)
+            ret = copy_to_user((uint32_t*)data.addr, buf,
+                data.num * sizeof(uint32_t));
 
-	case AMI_IOC_WRITE_BAR:
-	{
-		/*
-		 * `arg` is a pointer to the `ami_ioc_bar_data` struct.
-		 */
-		uint32_t *buf = NULL;
-		struct ami_ioc_bar_data data = { 0 };
+        vfree(buf);
+        break;
+    }
 
-		/* Read data payload. */
-		if (copy_from_user(&data, (struct ami_ioc_bar_data*)arg, sizeof(data))) {
-			ret = -EFAULT;
-			goto done;
-		}
+    case AMI_IOC_WRITE_BAR:
+    {
+        /*
+         * `arg` is a pointer to the `ami_ioc_bar_data` struct.
+         */
+        uint32_t *buf = NULL;
+        struct ami_ioc_bar_data data = { 0 };
 
-		/* Check permissions. */
-		if (!(data.cap_override || IS_ROOT_USER(current_uid().val, current_euid().val))) {
-			ret = -EPERM;
-			goto done;
-		}
+        /* Read data payload. */
+        if (copy_from_user(&data, (struct ami_ioc_bar_data*)arg, sizeof(data))) {
+            ret = -EFAULT;
+            goto done;
+        }
 
-		if ((data.num <= 0) || (data.addr == 0)) {
-			ret = -EINVAL;
-			goto done;
-		}
-		
-		/* Allocate memory for payload buffer. */
-		buf = vzalloc(data.num * sizeof(uint32_t));
+        /* Check permissions. */
+        if (!(data.cap_override || IS_ROOT_USER(current_uid().val, current_euid().val))) {
+            ret = -EPERM;
+            goto done;
+        }
 
-		if (!buf) {
-			ret = -ENOMEM;
-			goto done;
-		}
-		
-		/* Copy payload data. */
-		if (!copy_from_user(buf, (uint32_t*)data.addr, data.num * sizeof(uint32_t)))
-			ret = write_pcie_bar(pf_dev->pci, data.bar_idx,
-				data.offset, data.num, buf);
-		else
-			ret = -EFAULT;
-		
-		vfree(buf);
-		break;
-	}
+        if ((data.num <= 0) || (data.addr == 0)) {
+            ret = -EINVAL;
+            goto done;
+        }
 
-	case AMI_IOC_GET_SENSOR_VALUE:
-	{
-		/* `arg` is a pointer to `struct ami_ioc_sensor_value` */
-		struct ami_ioc_sensor_value data = { 0 };
-		enum hwmon_sensor_types hwmon_type = 0;
-		uint32_t hwmon_attr = 0;
+        /* Allocate memory for payload buffer. */
+        buf = vzalloc(data.num * sizeof(uint32_t));
 
-		if (copy_from_user(&data, (struct ami_ioc_sensor_value*)arg, sizeof(data))) {
-			ret = -EFAULT;
-			goto done;
-		}
+        if (!buf) {
+            ret = -ENOMEM;
+            goto done;
+        }
 
-		/* Currently, only the instant sensor value is supported with this API. */
-		switch (data.sensor_type) {
-		case IOC_SENSOR_TYPE_TEMP:
-			hwmon_type = hwmon_temp;
-			hwmon_attr = hwmon_temp_input;
-			break;
-		
-		case IOC_SENSOR_TYPE_POWER:
-			hwmon_type = hwmon_power;
-			hwmon_attr = hwmon_power_input;
-			break;
-		
-		case IOC_SENSOR_TYPE_CURRENT:
-			hwmon_type = hwmon_curr;
-			hwmon_attr = hwmon_curr_input;
-			break;
-		
-		case IOC_SENSOR_TYPE_VOLTAGE:
-			hwmon_type = hwmon_in;
-			hwmon_attr = hwmon_in_input;
-			break;
-		
-		default:
-			ret = -EINVAL;
-			break;
-		}
+        /* Copy payload data. */
+        if (!copy_from_user(buf, (uint32_t*)data.addr, data.num * sizeof(uint32_t)))
+            ret = write_pcie_bar(pf_dev->pci, data.bar_idx,
+                data.offset, data.num, buf);
+        else
+            ret = -EFAULT;
 
-		if (ret)
-			goto done;
+        vfree(buf);
+        break;
+    }
 
-		ret = read_sensor_val(
-			pf_dev,
-			hwmon_type,
-			hwmon_attr,
-			data.hwmon_channel,
-			&data.val,
-			data.status,
-			&data.fresh
-		);
+    case AMI_IOC_GET_SENSOR_VALUE:
+    {
+        /* `arg` is a pointer to `struct ami_ioc_sensor_value` */
+        struct ami_ioc_sensor_value data = { 0 };
+        enum hwmon_sensor_types hwmon_type = 0;
+        uint32_t hwmon_attr = 0;
 
-		if (!ret)
-			ret = copy_to_user((struct ami_ioc_sensor_value*)arg,
-				&data, sizeof(data));
+        if (copy_from_user(&data, (struct ami_ioc_sensor_value*)arg, sizeof(data))) {
+            ret = -EFAULT;
+            goto done;
+        }
 
-		break;
-	}
+        /* Currently, only the instant sensor value is supported with this API. */
+        switch (data.sensor_type) {
+        case IOC_SENSOR_TYPE_TEMP:
+            hwmon_type = hwmon_temp;
+            hwmon_attr = hwmon_temp_input;
+            break;
 
-	case AMI_IOC_GET_FPT_HDR:
-	{
+        case IOC_SENSOR_TYPE_POWER:
+            hwmon_type = hwmon_power;
+            hwmon_attr = hwmon_power_input;
+            break;
+
+        case IOC_SENSOR_TYPE_CURRENT:
+            hwmon_type = hwmon_curr;
+            hwmon_attr = hwmon_curr_input;
+            break;
+
+        case IOC_SENSOR_TYPE_VOLTAGE:
+            hwmon_type = hwmon_in;
+            hwmon_attr = hwmon_in_input;
+            break;
+
+        default:
+            ret = -EINVAL;
+            break;
+        }
+
+        if (ret)
+            goto done;
+
+        ret = read_sensor_val(
+            pf_dev,
+            hwmon_type,
+            hwmon_attr,
+            data.hwmon_channel,
+            &data.val,
+            data.status,
+            &data.fresh
+        );
+
+        if (!ret)
+            ret = copy_to_user((struct ami_ioc_sensor_value*)arg,
+                &data, sizeof(data));
+
+        break;
+    }
+
+    case AMI_IOC_GET_FPT_HDR:
+    {
                 /* `arg` is a pointer to `struct ami_ioc_fpt_hdr_value` */
                 struct ami_ioc_fpt_hdr_value data = { 0 };
                 struct fpt_header hdr = { 0 };
 
-		/* Read data payload from user. */
-		if (copy_from_user(&data, (struct ami_ioc_fpt_hdr_value*)arg, sizeof(data))) {
-			ret = -EFAULT;
-			goto done;
-		}	
+        /* Read data payload from user. */
+        if (copy_from_user(&data, (struct ami_ioc_fpt_hdr_value*)arg, sizeof(data))) {
+            ret = -EFAULT;
+            goto done;
+        }
 
                 ret = read_fpt_hdr(pf_dev, data.boot_device, &hdr);
                 if (!ret) {
@@ -487,13 +492,13 @@ long dev_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
                         data.entry_size = hdr.entry_size;
                         data.num_entries = hdr.num_entries;
                         ret = copy_to_user((struct ami_ioc_fpt_hdr_value*)arg,
-					   &data, sizeof(data));
+                       &data, sizeof(data));
                 }
                 break;
-	}
+    }
 
-	case AMI_IOC_GET_FPT_PARTITION:
-	{
+    case AMI_IOC_GET_FPT_PARTITION:
+    {
                 /* `arg` is a pointer to `struct ami_ioc_fpt_partition_value` */
                 struct ami_ioc_fpt_partition_value data = { 0 };
                 struct fpt_partition partition = { 0 };
@@ -504,7 +509,7 @@ long dev_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
                 }
 
                 ret = read_fpt_partition(pf_dev,
-					 data.boot_device,
+                     data.boot_device,
                                          data.partition,
                                          &partition);
                 if (!ret) {
@@ -512,10 +517,10 @@ long dev_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
                         data.base_addr = partition.base_addr;
                         data.partition_size = partition.partition_size;
                         ret = copy_to_user((struct ami_ioc_fpt_partition_value*)arg,
-					   &data, sizeof(data));
+                       &data, sizeof(data));
                 }
                 break;
-	}
+    }
 
         case AMI_IOC_READ_EEPROM:
         {
@@ -529,22 +534,22 @@ long dev_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
                 }
 
                 if ((data.len <= 0) || (data.addr == 0)) {
-			ret = -EINVAL;
-			goto done;
-		}
+            ret = -EINVAL;
+            goto done;
+        }
 
                 /* Allocate memory for response buffer. */
-		buf = vzalloc(data.len * sizeof(uint8_t));
+        buf = vzalloc(data.len * sizeof(uint8_t));
 
-		if (!buf) {
-			ret = -ENOMEM;
-			goto done;
-		}
+        if (!buf) {
+            ret = -ENOMEM;
+            goto done;
+        }
 
                 ret = eeprom_read(pf_dev->amc_ctrl_ctxt, buf, data.len, data.offset);
                 if (!ret) {
                         ret = copy_to_user((uint8_t*)data.addr, buf,
-				data.len * sizeof(uint8_t));
+                data.len * sizeof(uint8_t));
                 }
                 vfree(buf);
                 break;
@@ -553,245 +558,347 @@ long dev_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         case AMI_IOC_WRITE_EEPROM:
         {
                 struct ami_ioc_eeprom_payload data = { 0 };
-		uint8_t *buf = NULL;
+        uint8_t *buf = NULL;
 
-		/* Read data payload. */
-		if (copy_from_user(&data, (struct ami_ioc_eeprom_payload*)arg, sizeof(data))) {
-			ret = -EFAULT;
-			goto done;
-		}
+        /* Read data payload. */
+        if (copy_from_user(&data, (struct ami_ioc_eeprom_payload*)arg, sizeof(data))) {
+            ret = -EFAULT;
+            goto done;
+        }
 
-		if ((data.len <= 0) || (data.addr == 0)) {
-			ret = -EINVAL;
-			goto done;
-		}
+        if ((data.len <= 0) || (data.addr == 0)) {
+            ret = -EINVAL;
+            goto done;
+        }
 
-		/* Allocate memory for payload buffer. */
-		buf = vzalloc(data.len * sizeof(uint8_t));
+        /* Allocate memory for payload buffer. */
+        buf = vzalloc(data.len * sizeof(uint8_t));
 
-		if (!buf) {
-			ret = -ENOMEM;
-			goto done;
-		}
+        if (!buf) {
+            ret = -ENOMEM;
+            goto done;
+        }
 
-		/* Copy payload data. */
-		if (!copy_from_user(buf, (uint8_t*)data.addr, data.len * sizeof(uint8_t)))
-			ret = eeprom_write(pf_dev->amc_ctrl_ctxt, buf, data.len, data.offset);
+        /* Copy payload data. */
+        if (!copy_from_user(buf, (uint8_t*)data.addr, data.len * sizeof(uint8_t)))
+            ret = eeprom_write(pf_dev->amc_ctrl_ctxt, buf, data.len, data.offset);
                 else
-			ret = -EFAULT;
+            ret = -EFAULT;
 
-		vfree(buf);
+        vfree(buf);
                 break;
         }
 
-	case AMI_IOC_APP_SETUP:
-		switch ((enum ami_ioc_app_setup)arg) {
-		case IOC_APP_SETUP_REGISTER:
-			ret = add_pf_dev_app(pf_dev, get_current());
-			break;
-		
-		case IOC_APP_SETUP_DEREGISTER:
-			ret = delete_pf_dev_app(pf_dev, get_current());
-			break;
-		
-		default:
-			ret = -EINVAL;
-			break;
-		}
-		break;
+    case AMI_IOC_PEEK:
+    {
+        struct ami_ioc_peek_poke_payload data = { 0 };
+        uint8_t *buf = NULL;
 
-	case AMI_IOC_READ_MODULE:
-	{
-		struct ami_ioc_module_payload data = { 0 };
-		uint8_t *buf = NULL;
+        /* Read data payload. */
+        if (copy_from_user(&data, (struct ami_ioc_peek_poke_payload*)arg, sizeof(data))) {
+            ret = -EFAULT;
+            goto done;
+        }
 
-		/* Read data payload. */
-		if (copy_from_user(&data, (struct ami_ioc_module_payload*)arg, sizeof(data))) {
-			ret = -EFAULT;
-			goto done;
-		}
+        if ((data.len <= 0) || (data.addr == 0)) {
+            ret = -EINVAL;
+            goto done;
+        }
 
-		if ((data.len <= 0) || (data.addr == 0)) {
-			ret = -EINVAL;
-			goto done;
-		}
+        /* Allocate memory for response buffer. */
+        buf = vzalloc(data.len * sizeof(uint32_t));
 
-		/* Allocate memory for response buffer. */
-		buf = vzalloc(data.len * sizeof(uint8_t));
+        if (!buf) {
+            ret = -ENOMEM;
+            goto done;
+        }
 
-		if (!buf) {
-			ret = -ENOMEM;
-			goto done;
-		}
+        ret = peek(pf_dev->amc_ctrl_ctxt, buf, data.len * sizeof(uint32_t), data.offset);
+        if (!ret) {
+            ret = copy_to_user((uint8_t*)data.addr, buf, data.len * sizeof(uint32_t));
+        }
+        vfree(buf);
+        break;
+    }
 
-		ret = module_read(
-			pf_dev->amc_ctrl_ctxt,
-			data.device_id,
-			data.page,
-			data.offset,
-			buf,
-			data.len
-		);
+    case AMI_IOC_POKE:
+    {
+        struct ami_ioc_peek_poke_payload data = { 0 };
+        uint8_t *buf = NULL;
 
-		if (!ret) {
-			ret = copy_to_user((uint8_t*)data.addr, buf,
-				data.len * sizeof(uint8_t));
-		}
-		vfree(buf);
-		break;
-	}
+        /* Read data payload. */
+        if (copy_from_user(&data, (struct ami_ioc_peek_poke_payload*)arg, sizeof(data))) {
+            ret = -EFAULT;
+            goto done;
+        }
 
-	case AMI_IOC_WRITE_MODULE:
-	{
-		struct ami_ioc_module_payload data = { 0 };
-		uint8_t *buf = NULL;
+        if ((data.len <= 0) || (data.addr == 0)) {
+            ret = -EINVAL;
+            goto done;
+        }
 
-		/* Read data payload. */
-		if (copy_from_user(&data, (struct ami_ioc_module_payload*)arg, sizeof(data))) {
-			ret = -EFAULT;
-			goto done;
-		}
+        /* Allocate memory for payload buffer. */
+        buf = vzalloc(data.len * sizeof(uint32_t));
 
-		if ((data.len <= 0) || (data.addr == 0)) {
-			ret = -EINVAL;
-			goto done;
-		}
+        if (!buf) {
+            ret = -ENOMEM;
+            goto done;
+        }
 
-		/* Allocate memory for payload buffer. */
-		buf = vzalloc(data.len * sizeof(uint8_t));
+        /* Copy payload data. */
+        if (!copy_from_user(buf, (uint8_t*)data.addr, data.len * sizeof(uint32_t))) {
+            ret = poke(pf_dev->amc_ctrl_ctxt, buf, data.len*sizeof(uint32_t), data.offset);
+        } else {
+            ret = -EFAULT;
+        }
 
-		if (!buf) {
-			ret = -ENOMEM;
-			goto done;
-		}
+        vfree(buf);
+        break;
+    }
 
-		/* Copy payload data. */
-		if (!copy_from_user(buf, (uint8_t*)data.addr, data.len * sizeof(uint8_t)))
-			ret = module_write(
-				pf_dev->amc_ctrl_ctxt,
-				data.device_id,
-				data.page,
-				data.offset,
-				buf,
-				data.len
-			);
-		else
-			ret = -EFAULT;
+    case AMI_IOC_IOP_PUSH:
+    {
+        struct ami_ioc_iop_push_payload data = { 0 };
+        uint8_t *buf = NULL;
 
-		vfree(buf);
-		break;
-	}
+        /* Read data payload. */
+        if (copy_from_user(&data, (struct ami_ioc_iop_push_payload*)arg, sizeof(data))) {
+            ret = -EFAULT;
+            goto done;
+        }
 
-	case AMI_IOC_DEBUG_VERBOSITY:
-		ret = submit_gcq_command(
-			pf_dev->amc_ctrl_ctxt,
-			GCQ_SUBMIT_CMD_DEBUG_VERBOSITY,
-			(uint8_t)arg,
-			NULL,
-			0
-		);
-		break;
+        if ((data.len <= 0) || (data.addr == 0)) {
+            ret = -EINVAL;
+            goto done;
+        }
 
-	default:
-		PR_ERR("Unknown command, do nothing");
-		ret = -ENOTTY;
-		break;
-	}
+        /* Allocate memory for payload buffer. */
+        buf = vzalloc(data.len * sizeof(uint32_t));
+
+        if (!buf) {
+            ret = -ENOMEM;
+            goto done;
+        }
+
+        /* Copy payload data. */
+        if (!copy_from_user(buf, (uint8_t*)data.addr, data.len * sizeof(uint32_t))) {
+            ret = iop_push(pf_dev->amc_ctrl_ctxt, buf, data.len*sizeof(uint32_t), data.offset, data.dop);
+        } else {
+            ret = -EFAULT;
+        }
+
+        vfree(buf);
+        break;
+    }
+
+    case AMI_IOC_APP_SETUP:
+        switch ((enum ami_ioc_app_setup)arg) {
+        case IOC_APP_SETUP_REGISTER:
+            ret = add_pf_dev_app(pf_dev, get_current());
+            break;
+
+        case IOC_APP_SETUP_DEREGISTER:
+            ret = delete_pf_dev_app(pf_dev, get_current());
+            break;
+
+        default:
+            ret = -EINVAL;
+            break;
+        }
+        break;
+
+    case AMI_IOC_READ_MODULE:
+    {
+        struct ami_ioc_module_payload data = { 0 };
+        uint8_t *buf = NULL;
+
+        /* Read data payload. */
+        if (copy_from_user(&data, (struct ami_ioc_module_payload*)arg, sizeof(data))) {
+            ret = -EFAULT;
+            goto done;
+        }
+
+        if ((data.len <= 0) || (data.addr == 0)) {
+            ret = -EINVAL;
+            goto done;
+        }
+
+        /* Allocate memory for response buffer. */
+        buf = vzalloc(data.len * sizeof(uint8_t));
+
+        if (!buf) {
+            ret = -ENOMEM;
+            goto done;
+        }
+
+        ret = module_read(
+            pf_dev->amc_ctrl_ctxt,
+            data.device_id,
+            data.page,
+            data.offset,
+            buf,
+            data.len
+        );
+
+        if (!ret) {
+            ret = copy_to_user((uint8_t*)data.addr, buf,
+                data.len * sizeof(uint8_t));
+        }
+        vfree(buf);
+        break;
+    }
+
+    case AMI_IOC_WRITE_MODULE:
+    {
+        struct ami_ioc_module_payload data = { 0 };
+        uint8_t *buf = NULL;
+
+        /* Read data payload. */
+        if (copy_from_user(&data, (struct ami_ioc_module_payload*)arg, sizeof(data))) {
+            ret = -EFAULT;
+            goto done;
+        }
+
+        if ((data.len <= 0) || (data.addr == 0)) {
+            ret = -EINVAL;
+            goto done;
+        }
+
+        /* Allocate memory for payload buffer. */
+        buf = vzalloc(data.len * sizeof(uint8_t));
+
+        if (!buf) {
+            ret = -ENOMEM;
+            goto done;
+        }
+
+        /* Copy payload data. */
+        if (!copy_from_user(buf, (uint8_t*)data.addr, data.len * sizeof(uint8_t)))
+            ret = module_write(
+                pf_dev->amc_ctrl_ctxt,
+                data.device_id,
+                data.page,
+                data.offset,
+                buf,
+                data.len
+            );
+        else
+            ret = -EFAULT;
+
+        vfree(buf);
+        break;
+    }
+
+    case AMI_IOC_DEBUG_VERBOSITY:
+        ret = submit_gcq_command(
+            pf_dev->amc_ctrl_ctxt,
+            GCQ_SUBMIT_CMD_DEBUG_VERBOSITY,
+            (uint8_t)arg,
+            NULL,
+            0
+        );
+        break;
+
+    default:
+        PR_ERR("Unknown command, do nothing");
+        ret = -ENOTTY;
+        break;
+    }
 
 done:
-	if (efd_ctx)
-		eventfd_ctx_put(efd_ctx);
+    if (efd_ctx)
+        eventfd_ctx_put(efd_ctx);
 
-	up(&(pf_dev->ioctl_sema));
-	return ret;
+    up(&(pf_dev->ioctl_sema));
+    return ret;
 }
 
 /*
  * Create a character device.
  */
 int create_cdev(unsigned baseminor, struct drv_cdev_struct *drv_cdev,
-	struct device *parent, const struct file_operations *fops)
+    struct device *parent, const struct file_operations *fops)
 {
-	int ret = 0;
-	bool cls_created = false;
+    int ret = 0;
+    bool cls_created = false;
 
-	/* parent may be NULL */
-	if (!drv_cdev || !fops) {
-		return -EINVAL;
-	}
+    /* parent may be NULL */
+    if (!drv_cdev || !fops) {
+        return -EINVAL;
+    }
 
-	/* Allocate chrdev region */
-	drv_cdev->count = DEFAULT_CDEV_COUNT;
-	if(dev_major) {
-		drv_cdev->cdev_num = MKDEV(dev_major, baseminor);
-		ret = register_chrdev_region(drv_cdev->cdev_num, DEFAULT_CDEV_COUNT,
-			(const char*)DEFAULT_DEVICE_NAME);
-	} else {
-		/* This is the first device. */
-		ret = alloc_chrdev_region(&(drv_cdev->cdev_num), baseminor,
-			 DEFAULT_CDEV_COUNT, (const char*)DEFAULT_DEVICE_NAME);
-		dev_major = MAJOR(drv_cdev->cdev_num);
-	}
+    /* Allocate chrdev region */
+    drv_cdev->count = DEFAULT_CDEV_COUNT;
+    if(dev_major) {
+        drv_cdev->cdev_num = MKDEV(dev_major, baseminor);
+        ret = register_chrdev_region(drv_cdev->cdev_num, DEFAULT_CDEV_COUNT,
+            (const char*)DEFAULT_DEVICE_NAME);
+    } else {
+        /* This is the first device. */
+        ret = alloc_chrdev_region(&(drv_cdev->cdev_num), baseminor,
+             DEFAULT_CDEV_COUNT, (const char*)DEFAULT_DEVICE_NAME);
+        dev_major = MAJOR(drv_cdev->cdev_num);
+    }
 
-	if(ret)
-		goto fail;
+    if(ret)
+        goto fail;
 
-	/* If first device, create class. */
-	strncpy(drv_cdev->drv_cls_str, (const char*)DEFAULT_CLS_NAME, CLS_STR_SIZE);
+    /* If first device, create class. */
+    strncpy(drv_cdev->drv_cls_str, (const char*)DEFAULT_CLS_NAME, CLS_STR_SIZE);
 
-	if(!drv_cdev->dev_class) {
-		cls_created = true;
-		drv_cdev->dev_class = class_create(THIS_MODULE, drv_cdev->drv_cls_str);
-		if (IS_ERR(drv_cdev->dev_class)) {
-			ret = PTR_ERR(drv_cdev->dev_class);
-			PR_ERR("Failed to create class %s. ret : %d",
-				drv_cdev->drv_cls_str, ret);
-			goto unreg_cdev_reg;
-		}
-		drv_cdev->dev_class->devnode = devnode;
-	}
+    if(!drv_cdev->dev_class) {
+        cls_created = true;
+        drv_cdev->dev_class = class_create(THIS_MODULE, drv_cdev->drv_cls_str);
+        if (IS_ERR(drv_cdev->dev_class)) {
+            ret = PTR_ERR(drv_cdev->dev_class);
+            PR_ERR("Failed to create class %s. ret : %d",
+                drv_cdev->drv_cls_str, ret);
+            goto unreg_cdev_reg;
+        }
+        drv_cdev->dev_class->devnode = devnode;
+    }
 
-	/* Create device */
-	snprintf(drv_cdev->dev_name, DEV_NAME_SIZE, "%s%d", DEFAULT_DEVICE_NAME, baseminor);
-	drv_cdev->device = device_create(drv_cdev->dev_class, NULL,
-		drv_cdev->cdev_num, NULL, drv_cdev->dev_name);
-	if (IS_ERR(drv_cdev->device)) {
-		ret = PTR_ERR(drv_cdev->device);
-		PR_ERR("Failed to create device %s. ret : %d", drv_cdev->dev_name, ret);
-		goto del_class;
-	}
+    /* Create device */
+    snprintf(drv_cdev->dev_name, DEV_NAME_SIZE, "%s%d", DEFAULT_DEVICE_NAME, baseminor);
+    drv_cdev->device = device_create(drv_cdev->dev_class, NULL,
+        drv_cdev->cdev_num, NULL, drv_cdev->dev_name);
+    if (IS_ERR(drv_cdev->device)) {
+        ret = PTR_ERR(drv_cdev->device);
+        PR_ERR("Failed to create device %s. ret : %d", drv_cdev->dev_name, ret);
+        goto del_class;
+    }
 
-	/* Initialize the cdev structure */
-	cdev_init(&(drv_cdev->cdev), fops);
-	drv_cdev->cdev.owner = THIS_MODULE;
-	drv_cdev->cdev.ops = fops;
+    /* Initialize the cdev structure */
+    cdev_init(&(drv_cdev->cdev), fops);
+    drv_cdev->cdev.owner = THIS_MODULE;
+    drv_cdev->cdev.ops = fops;
 
-	/*
-	 * Setting the parent is necessary so that the kobject is referenced
-	 * appropriately and the parent is not freed before the cdev.
-	 */
-	if (parent)
-		cdev_set_parent(&drv_cdev->cdev, &parent->kobj);
-	
-	/* Register cdev to the kernel */
-	ret = cdev_add(&(drv_cdev->cdev), drv_cdev->cdev_num, drv_cdev->count);
-	if (ret) {
-		PR_ERR("Failed to register cdev to the kernel, err_code : %d", ret);
-		goto del_device;
-	}
+    /*
+     * Setting the parent is necessary so that the kobject is referenced
+     * appropriately and the parent is not freed before the cdev.
+     */
+    if (parent)
+        cdev_set_parent(&drv_cdev->cdev, &parent->kobj);
 
-	return SUCCESS;
+    /* Register cdev to the kernel */
+    ret = cdev_add(&(drv_cdev->cdev), drv_cdev->cdev_num, drv_cdev->count);
+    if (ret) {
+        PR_ERR("Failed to register cdev to the kernel, err_code : %d", ret);
+        goto del_device;
+    }
+
+    return SUCCESS;
 
 del_device:
-	device_destroy(drv_cdev->dev_class, drv_cdev->cdev_num);
+    device_destroy(drv_cdev->dev_class, drv_cdev->cdev_num);
 
 del_class:
-	if(cls_created)
-		class_destroy(drv_cdev->dev_class);
+    if(cls_created)
+        class_destroy(drv_cdev->dev_class);
 
 unreg_cdev_reg:
-	unregister_chrdev_region(drv_cdev->cdev_num, DEFAULT_CDEV_COUNT);
+    unregister_chrdev_region(drv_cdev->cdev_num, DEFAULT_CDEV_COUNT);
 
 fail:
-	return ret;
+    return ret;
 }

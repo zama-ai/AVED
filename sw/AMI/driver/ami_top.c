@@ -17,6 +17,7 @@
 #include <linux/slab.h>
 #include <linux/errno.h>
 #include <linux/pci.h>
+#include <linux/proc_fs.h>
 #include <uapi/linux/pci_regs.h>
 #include <linux/ioport.h>
 #include <asm-generic/pci_iomap.h>
@@ -60,7 +61,7 @@ bool ami_debug_enabled = true;
  */
 static DEFINE_MUTEX(pf_dev_lock);
 
-
+int register_proc_file(void);
 int register_driver_kernel(void);
 void unregister_driver_kernel(void);
 
@@ -68,84 +69,228 @@ int pcie_device_probe(struct pci_dev *dev, const struct pci_device_id *id);
 void pcie_device_remove(struct pci_dev *dev);
 int register_driver_pcie(void);
 
+// /proc file handling
+#define PROC_ENTRY_FILENAME "ami_iop_ack"
+static struct proc_dir_entry *ami_proc_file;
+/* 1 if the file is currently open by somebody */
+static atomic_t already_open = ATOMIC_INIT(0);
+/* 1 if there are data available to read for application */
+atomic_t iop_ack_cnt_atomic = ATOMIC_INIT(0);
+/* Queue of processes who want data */
+DECLARE_WAIT_QUEUE_HEAD(wait_iop_q);
+/* Queue of processes who want our file */
+static DECLARE_WAIT_QUEUE_HEAD(waitq);
+
+#define MESSAGE_LENGTH 80
+uint32_t *global_iop_ack_table;
+uint32_t global_iop_ack_table_size;
+
+static ssize_t ami_output(struct file *file, /* see include/linux/fs.h   */
+                             char __user *buf, /* The buffer to put data to
+                                                   (in the user segment)    */
+                             size_t len, /* The length of the buffer */
+                             loff_t *offset)
+{
+    int i,cnt=0;
+    int iop_ack_read;
+    char output_msg[MESSAGE_LENGTH + 30];
+
+    // PR_INFO("ami_output called waiting on iop_ack_cnt_atomic");
+    // wait_event_interruptible(wait_iop_q, atomic_read(&iop_ack_cnt_atomic));
+    // PR_INFO("ami_output readng process woken, iop_ack_cnt_atomic %d",atomic_read(&iop_ack_cnt_atomic));
+
+    if (atomic_read(&iop_ack_cnt_atomic)) {
+        iop_ack_read = atomic_xchg(&iop_ack_cnt_atomic, 0);
+        sprintf(output_msg, "%d\n", iop_ack_read);
+        for (i = 0; i < len && output_msg[i]; i++) {
+            put_user(output_msg[i], buf + cnt);
+            cnt++;
+        }
+        PR_INFO("ami_output read %d in iop_ack_cnt_atomic and set it to 0", iop_ack_read);
+            return cnt; /* Return the number of bytes "read" */
+    } else {
+        return 0;
+    }
+}
+
+static int ami_open(struct inode *inode, struct file *file)
+{
+    /* Try to get without blocking  */
+    if (!atomic_cmpxchg(&already_open, 0, 1)) {
+        /* Success without blocking, allow the access */
+        try_module_get(THIS_MODULE);
+        return 0;
+    }
+    /* If the file's flags include O_NONBLOCK, it means the process does not
+     * want to wait for the file. In this case, because the file is already open,
+     * we should fail with -EAGAIN, meaning "you will have to try again",
+     * instead of blocking a process which would rather stay awake.
+     */
+    if (file->f_flags & O_NONBLOCK)
+        return -EAGAIN;
+
+    /* This is the correct place for try_module_get(THIS_MODULE) because if
+     * a process is in the loop, which is within the kernel module,
+     * the kernel module must not be removed.
+     */
+    try_module_get(THIS_MODULE);
+
+    while (atomic_cmpxchg(&already_open, 0, 1)) {
+        int i, is_sig = 0;
+
+        /* This function puts the current process, including any system
+         * calls, such as us, to sleep.  Execution will be resumed right
+         * after the function call, either because somebody called
+         * wake_up(&waitq) (only module_close does that, when the file
+         * is closed) or when a signal, such as Ctrl-C, is sent
+         * to the process
+         */
+        wait_event_interruptible(waitq, !atomic_read(&already_open));
+
+        /* If we woke up because we got a signal we're not blocking,
+         * return -EINTR (fail the system call).  This allows processes
+         * to be killed or stopped.
+         */
+        for (i = 0; i < _NSIG_WORDS && !is_sig; i++)
+            is_sig = current->pending.signal.sig[i] & ~current->blocked.sig[i];
+
+        if (is_sig) {
+            /* It is important to put module_put(THIS_MODULE) here, because
+             * for processes where the open is interrupted there will never
+             * be a corresponding close. If we do not decrement the usage
+             * count here, we will be left with a positive usage count
+             * which we will have no way to bring down to zero, giving us
+             * an immortal module, which can only be killed by rebooting
+             * the machine.
+             */
+            module_put(THIS_MODULE);
+            return -EINTR;
+        }
+    }
+
+    return 0; /* Allow the access */
+}
+
+
+static int ami_close(struct inode *inode, struct file *file)
+{
+    /* Set already_open to zero, so one of the processes in the waitq will
+     * be able to set already_open back to one and to open the file. All
+     * the other processes will be called when already_open is back to one,
+     * so they'll go back to sleep.
+     */
+    atomic_set(&already_open, 0);
+
+    /* Wake up all the processes in waitq, so if anybody is waiting for the
+     * file, they can have it.
+     */
+    wake_up(&waitq);
+
+    module_put(THIS_MODULE);
+
+    return 0; /* success */
+}
+
+static const struct proc_ops file_ops_4_ami_proc_file = {
+        .proc_read = ami_output, /* "read" from the file */
+        .proc_write = NULL, /* "write" to the file */
+        .proc_open = ami_open, /* called when the /proc file is opened */
+        .proc_release = ami_close, /* called when it's closed */
+        .proc_lseek = noop_llseek, /* return file->f_pos */
+};
+
+int register_proc_file(void)
+{
+        ami_proc_file = proc_create(PROC_ENTRY_FILENAME, 0777, NULL, &file_ops_4_ami_proc_file);
+        if (ami_proc_file == NULL) {
+                pr_debug("Error: Could not initialize /proc/%s\n", PROC_ENTRY_FILENAME);
+                return -ENOMEM;
+        }
+        proc_set_size(ami_proc_file, 80);
+        proc_set_user(ami_proc_file, GLOBAL_ROOT_UID, GLOBAL_ROOT_GID);
+
+        pr_info("/proc/%s created\n", PROC_ENTRY_FILENAME);
+
+        return 0;
+}
 
 static struct file_operations dev_fops = {
-	.owner		= THIS_MODULE,
-	.open		= dev_open,
-	.release	= dev_close,
-	.unlocked_ioctl = dev_unlocked_ioctl,
+    .owner        = THIS_MODULE,
+    .open        = dev_open,
+    .release    = dev_close,
+    .unlocked_ioctl = dev_unlocked_ioctl,
 };
 
 int register_driver_kernel(void)
 {
-	int ret = 0;
+    int ret = 0;
 
-	/* Register the global driver character device. */
-	ret = create_cdev(pf_dev_index, &driver_dev, NULL, &dev_fops);
-	if (ret) {
-		driver_dev.count = 0;
-		PR_ERR("Failed to register character device to the kernel");
-	} else {
-		pf_dev_index++;
-		ret = SUCCESS;
-	}
+    /* Register the global driver character device. */
+    ret = create_cdev(pf_dev_index, &driver_dev, NULL, &dev_fops);
+    if (ret) {
+        driver_dev.count = 0;
+        PR_ERR("Failed to register character device to the kernel");
+    } else {
+        pf_dev_index++;
+        ret = SUCCESS;
+    }
 
-	return ret;
+    return ret;
 }
 
 void unregister_driver_kernel(void)
 {
-	PR_DBG("Delete cdev");
+    PR_DBG("Delete cdev");
 
-	if (driver_dev.count) {
-		cdev_del(&driver_dev.cdev);
-		device_destroy(driver_dev.dev_class, driver_dev.cdev_num);
-		class_destroy(driver_dev.dev_class);
-		unregister_chrdev_region(driver_dev.cdev_num, driver_dev.count);
-	}
+    if (driver_dev.count) {
+        cdev_del(&driver_dev.cdev);
+        device_destroy(driver_dev.dev_class, driver_dev.cdev_num);
+        class_destroy(driver_dev.dev_class);
+        unregister_chrdev_region(driver_dev.cdev_num, driver_dev.count);
+    }
 
-	driver_dev.count = 0;
+    driver_dev.count = 0;
 }
 
 static void amc_event_cb(enum amc_event_id id, void *data)
 {
-	switch (id) {
-	case AMC_EVENT_ID_HEARTBEAT_EXPIRED:
-		PR_ERR("AMC Heartbeat expired event received");
-		break;
+    switch (id) {
+    case AMC_EVENT_ID_HEARTBEAT_EXPIRED:
+        PR_ERR("AMC Heartbeat expired event received");
+        break;
 
-	case AMC_EVENT_ID_HEARTBEAT_VALIDATION:
-		PR_ERR("AMC Heartbeat validation event received");
-		break;
+    case AMC_EVENT_ID_HEARTBEAT_VALIDATION:
+        PR_ERR("AMC Heartbeat validation event received");
+        break;
 
-	/* This event will only be raised once */
-	case AMC_EVENT_ID_HEARTBEAT_FATAL:
-	{
-		struct pci_dev *dev = NULL;
-		struct pf_dev_struct *pf_dev = NULL;
+    /* This event will only be raised once */
+    case AMC_EVENT_ID_HEARTBEAT_FATAL:
+    {
+        struct pci_dev *dev = NULL;
+        struct pf_dev_struct *pf_dev = NULL;
 
-		PR_ERR("AMC Heartbeat fatal event received, stopping GCQ...");
+        PR_ERR("AMC Heartbeat fatal event received, stopping GCQ...");
 
-		if (!data) {
-			PR_ERR("AMC Heartbeat callback received invalid data!");
-		} else {
-			dev = (struct pci_dev*)data;
-			pf_dev = pci_get_drvdata(dev);
+        if (!data) {
+            PR_ERR("AMC Heartbeat callback received invalid data!");
+        } else {
+            dev = (struct pci_dev*)data;
+            pf_dev = pci_get_drvdata(dev);
 
-			if (!pf_dev) {
-				PR_ERR("AMC Heartbeat callback cannot recover!");
-			} else {
-				stop_gcq_services(pf_dev->amc_ctrl_ctxt);
-				/* Overwrite the device state */
-				pf_dev->state = PF_DEV_STATE_NO_AMC;
-			}
-		}
-	}
-	break;
+            if (!pf_dev) {
+                PR_ERR("AMC Heartbeat callback cannot recover!");
+            } else {
+                stop_gcq_services(pf_dev->amc_ctrl_ctxt);
+                /* Overwrite the device state */
+                pf_dev->state = PF_DEV_STATE_NO_AMC;
+            }
+        }
+    }
+    break;
 
-	default:
-		break;
-	}
+    default:
+        break;
+    }
 }
 
 /*
@@ -158,21 +303,21 @@ static void amc_event_cb(enum amc_event_id id, void *data)
  */
 
 static struct pci_device_id device_id[] = {
-	{
-		PCI_DEVICE(PCIE_VENDOR_ID, PCIE_DEVICE_ID),
-		.subvendor = PCIE_SUBVENDOR_ID,
-		.subdevice = PCIE_SUBDEVICE_ID,
-		.class = PCIE_CLASS_ID,
-	},
-	{}
+    {
+        PCI_DEVICE(PCIE_VENDOR_ID, PCIE_DEVICE_ID),
+        .subvendor = PCIE_SUBVENDOR_ID,
+        .subdevice = PCIE_SUBDEVICE_ID,
+        .class = PCIE_CLASS_ID,
+    },
+    {}
 };
 MODULE_DEVICE_TABLE(pci, device_id);
 
 static struct pci_driver pcie_driver_core = {
-	.name		= DEFAULT_DEVICE_NAME,  /* This name appears in /sys/bus/pci/drivers when driver is loaded into kernel */
-	.id_table	= device_id,
-	.probe		= pcie_device_probe,    /* Kernel calls this when it thinks our device is being inserted */
-	.remove		= pcie_device_remove,
+    .name        = DEFAULT_DEVICE_NAME,  /* This name appears in /sys/bus/pci/drivers when driver is loaded into kernel */
+    .id_table    = device_id,
+    .probe        = pcie_device_probe,    /* Kernel calls this when it thinks our device is being inserted */
+    .remove        = pcie_device_remove,
 };
 
 /**
@@ -185,164 +330,174 @@ static struct pci_driver pcie_driver_core = {
  */
 static int create_pf_dev_data(struct pci_dev *dev)
 {
-	int ret = SUCCESS;
-	int empty_sdr_count = 0;
-	struct pf_dev_struct *pf_dev = NULL;
+    int ret = SUCCESS;
+    int empty_sdr_count = 0;
+    struct pf_dev_struct *pf_dev = NULL;
+        uint32_t iopq_head, iopq_tail;
 
-	if (!dev)
-		return -EINVAL;
+    if (!dev)
+        return -EINVAL;
 
-	/* Allocating and zeroing kernel memory */
-	pf_dev = kzalloc(sizeof(struct pf_dev_struct), GFP_KERNEL);
+    /* Allocating and zeroing kernel memory */
+    pf_dev = kzalloc(sizeof(struct pf_dev_struct), GFP_KERNEL);
 
-	if (!pf_dev) {
-		PR_ERR("Failed to allocate kernel memory for pf_dev_struct");
-		ret = -ENOMEM;
-		goto fail;
-	}
+    if (!pf_dev) {
+        PR_ERR("Failed to allocate kernel memory for pf_dev_struct");
+        ret = -ENOMEM;
+        goto fail;
+    }
 
-	pf_dev->pci = dev;
-	pf_dev->sensor_refresh = SENSOR_REFRESH_TIMEOUT_MS;
-	pf_dev->hwmon_id = -1;
-	pf_dev->pcie_config = NULL;
-	pf_dev->endpoints = NULL;
-	pf_dev->amc_ctrl_ctxt = NULL;
-	pf_dev->pcie_bus_num = dev->bus->number;
-	pf_dev->pcie_device_num = PCI_SLOT(dev->devfn);
-	pf_dev->pcie_function_num = PCI_FUNC(dev->devfn);
-	sema_init(&pf_dev->ioctl_sema, 1);
-	sema_init(&pf_dev->remove_sema, 0);  /* init to 0 so we can block in the remove callback */
-	mutex_init(&pf_dev->app_lock);
-	kref_init(&pf_dev->refcount);
-	INIT_LIST_HEAD(&pf_dev->apps);
+    pf_dev->pci = dev;
+    pf_dev->sensor_refresh = SENSOR_REFRESH_TIMEOUT_MS;
+    pf_dev->hwmon_id = -1;
+    pf_dev->pcie_config = NULL;
+    pf_dev->endpoints = NULL;
+    pf_dev->amc_ctrl_ctxt = NULL;
+    pf_dev->pcie_bus_num = dev->bus->number;
+    pf_dev->pcie_device_num = PCI_SLOT(dev->devfn);
+    pf_dev->pcie_function_num = PCI_FUNC(dev->devfn);
+    sema_init(&pf_dev->ioctl_sema, 1);
+    sema_init(&pf_dev->remove_sema, 0);  /* init to 0 so we can block in the remove callback */
+    mutex_init(&pf_dev->app_lock);
+    kref_init(&pf_dev->refcount);
+    INIT_LIST_HEAD(&pf_dev->apps);
 
-	sprintf(pf_dev->bdf_str,
-		"%02x:%02x.%1x",
-		pf_dev->pcie_bus_num,
-		pf_dev->pcie_device_num,
-		pf_dev->pcie_function_num);
+    sprintf(pf_dev->bdf_str,
+        "%02x:%02x.%1x",
+        pf_dev->pcie_bus_num,
+        pf_dev->pcie_device_num,
+        pf_dev->pcie_function_num);
 
-	DEV_INFO(dev, "PCIE device BDF %s", pf_dev->bdf_str);
+    DEV_INFO(dev, "PCIE device BDF %s", pf_dev->bdf_str);
 
-	pci_set_drvdata(dev, pf_dev);
+    pci_set_drvdata(dev, pf_dev);
 
-	/* Read the configuration registers */
-	ret = read_pcie_configuration(dev, &pf_dev->pcie_config);
-	if (ret)
-		goto delete_data;
+    /* Read the configuration registers */
+    ret = read_pcie_configuration(dev, &pf_dev->pcie_config);
+    if (ret)
+        goto delete_data;
 
-	/* Setting PCIE Config */
-	ret = write_pcie_configuration(dev);
-	if (ret)
-		goto delete_data;
+    /* Setting PCIE Config */
+    ret = write_pcie_configuration(dev);
+    if (ret)
+        goto delete_data;
 
-	/* Read vendor specific information */
-	if (pf_dev->pcie_config->ext_cap->vsec_base_addr_found) {
-		ret = read_vsec(dev,
-				pf_dev->pcie_config->ext_cap->vsec_base_addr,
-				&pf_dev->endpoints);
-		if (ret)
-			goto delete_data;
-	} else {
-		ret = -EINVAL;
-		goto delete_data;
-	}
+    /* Read vendor specific information */
+    if (pf_dev->pcie_config->ext_cap->vsec_base_addr_found) {
+        ret = read_vsec(dev,
+                pf_dev->pcie_config->ext_cap->vsec_base_addr,
+                &pf_dev->endpoints);
+        if (ret)
+            goto delete_data;
+    } else {
+        ret = -EINVAL;
+        goto delete_data;
+    }
 
-	/* AMC Setup */
-	/*
-	 * If this fails, simply set the context to NULL and try to
-	 * continue with the probe function as normal.
-	 */
-	ret = setup_amc(dev,
-			&pf_dev->amc_ctrl_ctxt,
-			pf_dev->endpoints->gcq,
-			pf_dev->endpoints->gcq_payload,
-			amc_event_cb,
-			(void*)dev);
-	if (ret) {
-		pf_dev->amc_ctrl_ctxt = NULL;
-		pf_dev->state = PF_DEV_STATE_NO_AMC;
-	} else {
-		if (pf_dev->amc_ctrl_ctxt->compat_mode)
-			pf_dev->state = PF_DEV_STATE_COMPAT;
-	}
+    /* AMC Setup */
+    /*
+     * If this fails, simply set the context to NULL and try to
+     * continue with the probe function as normal.
+     */
+    ret = setup_amc(dev,
+            &pf_dev->amc_ctrl_ctxt,
+            pf_dev->endpoints->gcq,
+            pf_dev->endpoints->gcq_payload,
+            amc_event_cb,
+            (void*)dev);
+    if (ret) {
+        pf_dev->amc_ctrl_ctxt = NULL;
+        pf_dev->state = PF_DEV_STATE_NO_AMC;
+    } else {
+        if (pf_dev->amc_ctrl_ctxt->compat_mode)
+            pf_dev->state = PF_DEV_STATE_COMPAT;
+                // reset IOP queue with AMC
+                // tbd as this is not working at all if RPU is also writing the head
+                // we may need an enable of the queue?
+                iopq_head = ioread32(pf_dev->amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOP_ADDR_HEAD);
+                iopq_tail = ioread32(pf_dev->amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOP_ADDR_TAIL);
+                if (iopq_head != iopq_tail) {
+                    DEV_INFO(dev, "iop queue tail(%d) & head(%d) were different so reset tail at head value", iopq_tail, iopq_head);
+                    iowrite32(iopq_head, pf_dev->amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOP_ADDR_TAIL);
+                }
+        }
 
-	/*
-	 * Attempt sensor discovery only if AMC was initialised correctly.
-	 * COMPAT MODE: No sensor data and no hwmon entries.
-	 */
-	if ((pf_dev->pcie_function_num == 0) && pf_dev->amc_ctrl_ctxt &&
-	    !(pf_dev->amc_ctrl_ctxt->compat_mode)) {
-		/* We don't bail out if the sensor discover fails - the user
-		 * should still be able to access the device regardless. We do
-		 * bail out, however, if the hwmon init fails as this should not
-		 * happen. NOTE: Both, the sensor data and hwmon data use managed
-		 * memory so no cleanup is necessary.
-		 */
-		if (!discover_sensors(pf_dev, &empty_sdr_count)) {
-			ret = register_hwmon(&dev->dev, pf_dev);
-			if (ret)
-				goto remove_pf_dev;
-		} else {
-			pf_dev->state = PF_DEV_STATE_INIT_ERROR;
-		}
-	}
+    /*
+     * Attempt sensor discovery only if AMC was initialised correctly.
+     * COMPAT MODE: No sensor data and no hwmon entries.
+     */
+    if ((pf_dev->pcie_function_num == 0) && pf_dev->amc_ctrl_ctxt &&
+        !(pf_dev->amc_ctrl_ctxt->compat_mode)) {
+        /* We don't bail out if the sensor discover fails - the user
+         * should still be able to access the device regardless. We do
+         * bail out, however, if the hwmon init fails as this should not
+         * happen. NOTE: Both, the sensor data and hwmon data use managed
+         * memory so no cleanup is necessary.
+         */
+        if (!discover_sensors(pf_dev, &empty_sdr_count)) {
+            ret = register_hwmon(&dev->dev, pf_dev);
+            if (ret)
+                goto remove_pf_dev;
+        } else {
+            pf_dev->state = PF_DEV_STATE_INIT_ERROR;
+        }
+    }
 
-	/*
-	 * Create extra sysfs attributes.
-	 * COMPAT MODE: sysfs allowed.
-	 */
+    /*
+     * Create extra sysfs attributes.
+     * COMPAT MODE: sysfs allowed.
+     */
 
-	ret = register_sysfs(&dev->dev);
-	if (ret)
-		goto remove_pf_dev;
+    ret = register_sysfs(&dev->dev);
+    if (ret)
+        goto remove_pf_dev;
 
-	/*
-	 * Create character device.
-	 * COMPAT MODE: cdev allowed but only certain functions will succeed.
-	 */
-	pf_dev->cdev.dev_class = driver_dev.dev_class;
-	strncpy(pf_dev->cdev.drv_cls_str,
-		driver_dev.drv_cls_str,
-		strlen(driver_dev.drv_cls_str));
+    /*
+     * Create character device.
+     * COMPAT MODE: cdev allowed but only certain functions will succeed.
+     */
+    pf_dev->cdev.dev_class = driver_dev.dev_class;
+    strncpy(pf_dev->cdev.drv_cls_str,
+        driver_dev.drv_cls_str,
+        strlen(driver_dev.drv_cls_str));
 
-	ret = create_cdev(pf_dev_index, &pf_dev->cdev, &dev->dev, &dev_fops);
-	if (ret)
-		goto delete_sysfs;
+    ret = create_cdev(pf_dev_index, &pf_dev->cdev, &dev->dev, &dev_fops);
+    if (ret)
+        goto delete_sysfs;
 
-	pf_dev_index++;
+    pf_dev_index++;
 
-	if (pf_dev->state == PF_DEV_STATE_INIT) {
-		if (empty_sdr_count)
-			pf_dev->state = PF_DEV_STATE_MISSING_INFO;
-		else
-			pf_dev->state = PF_DEV_STATE_READY;
-	}
+    if (pf_dev->state == PF_DEV_STATE_INIT) {
+        if (empty_sdr_count)
+            pf_dev->state = PF_DEV_STATE_MISSING_INFO;
+        else
+            pf_dev->state = PF_DEV_STATE_READY;
+    }
 
-	DEV_VDBG(dev, "Successfully probed device: 0x%X", dev->device);
-	pf_dev->enabled = true;  /* This is safe if we are called from the probe callback. */
-	return SUCCESS;
+    DEV_VDBG(dev, "Successfully probed device: 0x%X", dev->device);
+    pf_dev->enabled = true;  /* This is safe if we are called from the probe callback. */
+    return SUCCESS;
 
 delete_sysfs:
-	remove_sysfs(&dev->dev);
+    remove_sysfs(&dev->dev);
 
 remove_pf_dev:
-	pf_dev->cdev.count = 0;
+    pf_dev->cdev.count = 0;
 
-	if (pf_dev->amc_ctrl_ctxt) {
-		unset_amc(dev, &pf_dev->amc_ctrl_ctxt);
-		release_amc_mem(&pf_dev->amc_ctrl_ctxt);
-	}
+    if (pf_dev->amc_ctrl_ctxt) {
+        unset_amc(dev, &pf_dev->amc_ctrl_ctxt);
+        release_amc_mem(&pf_dev->amc_ctrl_ctxt);
+    }
 
 delete_data:
-	release_vsec_mem(&pf_dev->endpoints);
-	release_pcie_mem(&pf_dev->pcie_config);
-	kfree(pf_dev);
-	pci_set_drvdata(dev, NULL);
+    release_vsec_mem(&pf_dev->endpoints);
+    release_pcie_mem(&pf_dev->pcie_config);
+    kfree(pf_dev);
+    pci_set_drvdata(dev, NULL);
 
 fail:
-	DEV_VDBG(dev, "Failed to create pf_dev data: 0x%X", dev->device);
-	return ret;
+    DEV_VDBG(dev, "Failed to create pf_dev data: 0x%X", dev->device);
+    return ret;
 }
 
 /**
@@ -359,38 +514,38 @@ fail:
  */
 int pcie_device_probe(struct pci_dev *dev, const struct pci_device_id *id)
 {
-	int ret = SUCCESS;
+    int ret = SUCCESS;
 
-	if (!dev || !id)
-		return -EINVAL;
+    if (!dev || !id)
+        return -EINVAL;
 
-	if (!is_supported_pcie_device_id(dev->device)) {
-		DEV_VDBG(dev, "Device ID not supported: 0x%X", dev->device);
-		return -EINVAL;
-	}
+    if (!is_supported_pcie_device_id(dev->device)) {
+        DEV_VDBG(dev, "Device ID not supported: 0x%X", dev->device);
+        return -EINVAL;
+    }
 
-	DEV_VDBG(dev,
-		 "Probing PCIE device (vendor id : 0x%X, device id : 0x%X)",
-		 dev->vendor,
-		 dev->device);
+    DEV_VDBG(dev,
+         "Probing PCIE device (vendor id : 0x%X, device id : 0x%X)",
+         dev->vendor,
+         dev->device);
 
-	ret = pci_enable_device(dev);
-	if (ret) {
-		DEV_ERR(dev, "PCIE device enable failed");
-		return ret;
-	}
-	DEV_VDBG(dev, "Successfully enabled PCIE device");
+    ret = pci_enable_device(dev);
+    if (ret) {
+        DEV_ERR(dev, "PCIE device enable failed");
+        return ret;
+    }
+    DEV_VDBG(dev, "Successfully enabled PCIE device");
 
-	ret = create_pf_dev_data(dev);
+    ret = create_pf_dev_data(dev);
 
-	if (ret) {
-		pci_disable_device(dev);
-		DEV_VDBG(dev, "Failed to probe device: 0x%X", dev->device);
-	} else {
-		DEV_VDBG(dev, "Successfully probed device: 0x%X", dev->device);
-	}
+    if (ret) {
+        pci_disable_device(dev);
+        DEV_VDBG(dev, "Failed to probe device: 0x%X", dev->device);
+    } else {
+        DEV_VDBG(dev, "Successfully probed device: 0x%X", dev->device);
+    }
 
-	return ret;
+    return ret;
 }
 
 /*
@@ -398,16 +553,16 @@ int pcie_device_probe(struct pci_dev *dev, const struct pci_device_id *id)
  */
 void shutdown_pf_dev_services(struct pf_dev_struct *pf_dev)
 {
-	if (!pf_dev || (pf_dev->state == PF_DEV_STATE_SHUTDOWN))
-		return;
+    if (!pf_dev || (pf_dev->state == PF_DEV_STATE_SHUTDOWN))
+        return;
 
-	/* Shutdown AMC. */
-	if (pf_dev->amc_ctrl_ctxt) {
-		unset_amc(pf_dev->pci, &pf_dev->amc_ctrl_ctxt);
-		release_amc_mem(&pf_dev->amc_ctrl_ctxt);  /* NOTE: This sets the pointer to NULL. */
-	}
+    /* Shutdown AMC. */
+    if (pf_dev->amc_ctrl_ctxt) {
+        unset_amc(pf_dev->pci, &pf_dev->amc_ctrl_ctxt);
+        release_amc_mem(&pf_dev->amc_ctrl_ctxt);  /* NOTE: This sets the pointer to NULL. */
+    }
 
-	pf_dev->state = PF_DEV_STATE_SHUTDOWN;
+    pf_dev->state = PF_DEV_STATE_SHUTDOWN;
 }
 
 /**
@@ -419,92 +574,92 @@ void shutdown_pf_dev_services(struct pf_dev_struct *pf_dev)
  */
 void delete_pf_dev_data(struct pf_dev_struct *pf_dev, bool delete_managed)
 {
-	struct pf_dev_application *pos = NULL, *next = NULL;
+    struct pf_dev_application *pos = NULL, *next = NULL;
 
-	if (!pf_dev)
-		return;
+    if (!pf_dev)
+        return;
 
-	/* Prevent new app registrations */
-	mutex_lock(&pf_dev->app_lock);
+    /* Prevent new app registrations */
+    mutex_lock(&pf_dev->app_lock);
 
-	/* Delete all apps */
-	list_for_each_entry_safe(pos, next, &pf_dev->apps, list) {
-		put_pid(pos->pid);
-		list_del(&pos->list);
+    /* Delete all apps */
+    list_for_each_entry_safe(pos, next, &pf_dev->apps, list) {
+        put_pid(pos->pid);
+        list_del(&pos->list);
 
-		if (delete_managed)
-			devm_kfree(&pf_dev->pci->dev, pos);
-	}
+        if (delete_managed)
+            devm_kfree(&pf_dev->pci->dev, pos);
+    }
 
-	shutdown_pf_dev_services(pf_dev);
+    shutdown_pf_dev_services(pf_dev);
 
-	if (pf_dev->cdev.count) {
-		/* Don't destroy the class here. */
-		cdev_del(&pf_dev->cdev.cdev);
-		device_destroy(pf_dev->cdev.dev_class, pf_dev->cdev.cdev_num);
-		unregister_chrdev_region(pf_dev->cdev.cdev_num, pf_dev->cdev.count);
-	}
+    if (pf_dev->cdev.count) {
+        /* Don't destroy the class here. */
+        cdev_del(&pf_dev->cdev.cdev);
+        device_destroy(pf_dev->cdev.dev_class, pf_dev->cdev.cdev_num);
+        unregister_chrdev_region(pf_dev->cdev.cdev_num, pf_dev->cdev.count);
+    }
 
-	release_vsec_mem(&pf_dev->endpoints);
-	release_pcie_mem(&pf_dev->pcie_config);
+    release_vsec_mem(&pf_dev->endpoints);
+    release_pcie_mem(&pf_dev->pcie_config);
 
-	remove_sysfs(&pf_dev->pci->dev);
+    remove_sysfs(&pf_dev->pci->dev);
 
-	/* Managed data does not need to be manually freed if a device has been removed. */
-	if (delete_managed) {
-		delete_sensors(pf_dev);
-		remove_hwmon(pf_dev->hwmon_dev);
-	}
+    /* Managed data does not need to be manually freed if a device has been removed. */
+    if (delete_managed) {
+        delete_sensors(pf_dev);
+        remove_hwmon(pf_dev->hwmon_dev);
+    }
 
-	pci_set_drvdata(pf_dev->pci, NULL);
-	mutex_unlock(&pf_dev->app_lock);
-	kfree(pf_dev);
+    pci_set_drvdata(pf_dev->pci, NULL);
+    mutex_unlock(&pf_dev->app_lock);
+    kfree(pf_dev);
 }
 
 void pcie_device_remove(struct pci_dev *dev)
 {
-	struct pf_dev_struct *pf_dev = NULL;
+    struct pf_dev_struct *pf_dev = NULL;
 
-	if (!dev)
-		return;
+    if (!dev)
+        return;
 
-	pf_dev = pci_get_drvdata(dev);
+    pf_dev = pci_get_drvdata(dev);
 
-	if (pf_dev) {
-		mutex_lock(&pf_dev_lock);
-		/*
-		 * We can access pf_dev directly because we have a
-		 * reference from the probe function - we will set the device
-		 * to disabled to prevent any further reference increases and also release
-		 * our own reference. The device data will only be deleted when the
-		 * refcount reaches 0.
-		 */
-		pf_dev->enabled = false;
-		mutex_unlock(&pf_dev_lock);
-		put_pf_dev_entry(pf_dev);
-	}
+    if (pf_dev) {
+        mutex_lock(&pf_dev_lock);
+        /*
+         * We can access pf_dev directly because we have a
+         * reference from the probe function - we will set the device
+         * to disabled to prevent any further reference increases and also release
+         * our own reference. The device data will only be deleted when the
+         * refcount reaches 0.
+         */
+        pf_dev->enabled = false;
+        mutex_unlock(&pf_dev_lock);
+        put_pf_dev_entry(pf_dev);
+    }
 
-	pci_disable_device(dev);                        /* Disable bus mastering regardless of the refcount */
-	kill_pf_dev_apps(pf_dev, SIGBUS);               /* Kill any applications that may still be running */
-	down_interruptible(&pf_dev->remove_sema);       /* Wait until the refcount reaches 0 */
-	delete_pf_dev_data(pf_dev, false);              /* Safe to delete data */
-	DEV_INFO(dev, "Successfully removed PCIe device");
+    pci_disable_device(dev);                        /* Disable bus mastering regardless of the refcount */
+    kill_pf_dev_apps(pf_dev, SIGBUS);               /* Kill any applications that may still be running */
+    down_interruptible(&pf_dev->remove_sema);       /* Wait until the refcount reaches 0 */
+    delete_pf_dev_data(pf_dev, false);              /* Safe to delete data */
+    DEV_INFO(dev, "Successfully removed PCIe device");
 }
 
 int register_driver_pcie(void)
 {
-	int ret = 0;
+    int ret = 0;
 
-	ret = pci_register_driver(&pcie_driver_core);
-	if (ret)
-		goto fail;
+    ret = pci_register_driver(&pcie_driver_core);
+    if (ret)
+        goto fail;
 
-	PR_DBG("Successfully registered module with PCIE Core");
-	return SUCCESS;
+    PR_DBG("Successfully registered module with PCIE Core");
+    return SUCCESS;
 
 fail:
-	PR_ERR("Module registration with PCIE Core failed");
-	return ret;
+    PR_ERR("Module registration with PCIE Core failed");
+    return ret;
 }
 
 /**
@@ -519,15 +674,15 @@ fail:
  */
 static void release_pf_dev_entry(struct kref *ref)
 {
-	struct pf_dev_struct *pf_dev = NULL;
+    struct pf_dev_struct *pf_dev = NULL;
 
-	if (!ref)
-		return;
+    if (!ref)
+        return;
 
-	pf_dev = container_of(ref, struct pf_dev_struct, refcount);
+    pf_dev = container_of(ref, struct pf_dev_struct, refcount);
 
-	/* No need to acquire pf_dev_lock here */
-	up(&pf_dev->remove_sema);
+    /* No need to acquire pf_dev_lock here */
+    up(&pf_dev->remove_sema);
 }
 
 /*
@@ -535,57 +690,57 @@ static void release_pf_dev_entry(struct kref *ref)
  */
 struct pf_dev_struct *get_pf_dev_entry(void *cache, enum pf_dev_cache_type cache_type)
 {
-	struct pf_dev_struct *entry = NULL;
+    struct pf_dev_struct *entry = NULL;
 
-	if (!cache)
-		return NULL;
+    if (!cache)
+        return NULL;
 
-	mutex_lock(&pf_dev_lock);
+    mutex_lock(&pf_dev_lock);
 
-	switch (cache_type) {
-	case PF_DEV_CACHE_PCI_DEV:
-	{
-		struct pci_dev *pci_dev = (struct pci_dev*)cache;
-		entry = pci_get_drvdata(pci_dev);
-		break;
-	}
+    switch (cache_type) {
+    case PF_DEV_CACHE_PCI_DEV:
+    {
+        struct pci_dev *pci_dev = (struct pci_dev*)cache;
+        entry = pci_get_drvdata(pci_dev);
+        break;
+    }
 
-	case PF_DEV_CACHE_FILP:
-	{
-		struct file *filp = (struct file*)cache;
-		if (iminor(filp->f_inode) != DEFAULT_CDEV_BASEMINOR)
-			entry = filp->private_data;
-		break;
-	}
+    case PF_DEV_CACHE_FILP:
+    {
+        struct file *filp = (struct file*)cache;
+        if (iminor(filp->f_inode) != DEFAULT_CDEV_BASEMINOR)
+            entry = filp->private_data;
+        break;
+    }
 
-	case PF_DEV_CACHE_INODE:
-	{
-		struct inode *inode = (struct inode*)cache;
-		struct drv_cdev_struct *cdev = NULL;
-		if (iminor(inode) != DEFAULT_CDEV_BASEMINOR) {
-			cdev = container_of(inode->i_cdev, struct drv_cdev_struct, cdev);
-			entry = container_of(cdev, struct pf_dev_struct, cdev);
-		}
-		break;
-	}
+    case PF_DEV_CACHE_INODE:
+    {
+        struct inode *inode = (struct inode*)cache;
+        struct drv_cdev_struct *cdev = NULL;
+        if (iminor(inode) != DEFAULT_CDEV_BASEMINOR) {
+            cdev = container_of(inode->i_cdev, struct drv_cdev_struct, cdev);
+            entry = container_of(cdev, struct pf_dev_struct, cdev);
+        }
+        break;
+    }
 
-	case PF_DEV_CACHE_DEV:
-	{
-		struct device *dev = (struct device*)cache;
-		entry = dev_get_drvdata(dev);
-		break;
-	}
+    case PF_DEV_CACHE_DEV:
+    {
+        struct device *dev = (struct device*)cache;
+        entry = dev_get_drvdata(dev);
+        break;
+    }
 
-	default:
-		break;
-	}
+    default:
+        break;
+    }
 
-	if (entry)
-		if (!entry->enabled || !kref_get_unless_zero(&entry->refcount))
-			entry = NULL;
+    if (entry)
+        if (!entry->enabled || !kref_get_unless_zero(&entry->refcount))
+            entry = NULL;
 
-	mutex_unlock(&pf_dev_lock);
-	return entry;
+    mutex_unlock(&pf_dev_lock);
+    return entry;
 }
 
 /*
@@ -593,8 +748,8 @@ struct pf_dev_struct *get_pf_dev_entry(void *cache, enum pf_dev_cache_type cache
  */
 void put_pf_dev_entry(struct pf_dev_struct *pf_dev)
 {
-	if (pf_dev)
-		kref_put(&pf_dev->refcount, release_pf_dev_entry);
+    if (pf_dev)
+        kref_put(&pf_dev->refcount, release_pf_dev_entry);
 }
 
 /*
@@ -602,44 +757,44 @@ void put_pf_dev_entry(struct pf_dev_struct *pf_dev)
  */
 int add_pf_dev_app(struct pf_dev_struct *pf_dev, struct task_struct *task)
 {
-	int ret = 0;
-	struct pid *pid = NULL;
-	struct pf_dev_application *app = NULL, *pos = NULL;
+    int ret = 0;
+    struct pid *pid = NULL;
+    struct pf_dev_application *app = NULL, *pos = NULL;
 
-	if (!pf_dev || !task)
-		return -EINVAL;
+    if (!pf_dev || !task)
+        return -EINVAL;
 
-	mutex_lock(&pf_dev->app_lock);
-	pid = get_task_pid(task, PIDTYPE_PID);
+    mutex_lock(&pf_dev->app_lock);
+    pid = get_task_pid(task, PIDTYPE_PID);
 
-	if (!pid) {
-		ret = -EINVAL;
-		goto done;
-	}
+    if (!pid) {
+        ret = -EINVAL;
+        goto done;
+    }
 
-	/* Do nothing if app already exists. */
-	list_for_each_entry(pos, &pf_dev->apps, list) {
-		if (pid == pos->pid)
-			goto done;
-	}
+    /* Do nothing if app already exists. */
+    list_for_each_entry(pos, &pf_dev->apps, list) {
+        if (pid == pos->pid)
+            goto done;
+    }
 
-	app = devm_kzalloc(&pf_dev->pci->dev,
-			   sizeof(struct pf_dev_application),
-			   GFP_KERNEL);
+    app = devm_kzalloc(&pf_dev->pci->dev,
+               sizeof(struct pf_dev_application),
+               GFP_KERNEL);
 
-	if (!app) {
-		ret = -ENOMEM;
-		goto done;
-	}
+    if (!app) {
+        ret = -ENOMEM;
+        goto done;
+    }
 
-	app->pid = pid;
-	INIT_LIST_HEAD(&app->list);
-	list_add(&app->list, &pf_dev->apps);
+    app->pid = pid;
+    INIT_LIST_HEAD(&app->list);
+    list_add(&app->list, &pf_dev->apps);
 
 done:
-	/* Don't call `put_pid` here */
-	mutex_unlock(&pf_dev->app_lock);
-	return ret;
+    /* Don't call `put_pid` here */
+    mutex_unlock(&pf_dev->app_lock);
+    return ret;
 }
 
 /*
@@ -647,28 +802,28 @@ done:
  */
 int delete_pf_dev_app(struct pf_dev_struct *pf_dev, struct task_struct *task)
 {
-	struct pid *pid = NULL;
-	struct pf_dev_application *pos = NULL, *next = NULL;
+    struct pid *pid = NULL;
+    struct pf_dev_application *pos = NULL, *next = NULL;
 
-	if (!pf_dev || !task)
-		return -EINVAL;
+    if (!pf_dev || !task)
+        return -EINVAL;
 
-	mutex_lock(&pf_dev->app_lock);
-	pid = get_task_pid(task, PIDTYPE_PID);
+    mutex_lock(&pf_dev->app_lock);
+    pid = get_task_pid(task, PIDTYPE_PID);
 
-	/* Do nothing if app is not in list. */
-	list_for_each_entry_safe(pos, next, &pf_dev->apps, list) {
-		if (pid == pos->pid) {
-			put_pid(pos->pid);
-			list_del(&pos->list);
-			devm_kfree(&pf_dev->pci->dev, pos);
-			break;
-		}
-	}
+    /* Do nothing if app is not in list. */
+    list_for_each_entry_safe(pos, next, &pf_dev->apps, list) {
+        if (pid == pos->pid) {
+            put_pid(pos->pid);
+            list_del(&pos->list);
+            devm_kfree(&pf_dev->pci->dev, pos);
+            break;
+        }
+    }
 
-	put_pid(pid);
-	mutex_unlock(&pf_dev->app_lock);
-	return 0;
+    put_pid(pid);
+    mutex_unlock(&pf_dev->app_lock);
+    return 0;
 }
 
 /*
@@ -676,28 +831,28 @@ int delete_pf_dev_app(struct pf_dev_struct *pf_dev, struct task_struct *task)
  */
 int kill_pf_dev_apps(struct pf_dev_struct *pf_dev, int sig)
 {
-	int ret = 0, r = 0;
-	struct pf_dev_application *pos = NULL, *next = NULL;
+    int ret = 0, r = 0;
+    struct pf_dev_application *pos = NULL, *next = NULL;
 
-	if (!pf_dev)
-		return -EINVAL;
+    if (!pf_dev)
+        return -EINVAL;
 
-	mutex_lock(&pf_dev->app_lock);
+    mutex_lock(&pf_dev->app_lock);
 
-	list_for_each_entry_safe(pos, next, &pf_dev->apps, list) {
-		if ((r = kill_pid(pos->pid, sig, 0))) {
-			/* Could not send signal. */
-			if (!ret)
-				ret = r;
-		} else {
-			put_pid(pos->pid);
-			list_del(&pos->list);
-			devm_kfree(&pf_dev->pci->dev, pos);
-		}
-	}
+    list_for_each_entry_safe(pos, next, &pf_dev->apps, list) {
+        if ((r = kill_pid(pos->pid, sig, 0))) {
+            /* Could not send signal. */
+            if (!ret)
+                ret = r;
+        } else {
+            put_pid(pos->pid);
+            list_del(&pos->list);
+            devm_kfree(&pf_dev->pci->dev, pos);
+        }
+    }
 
-	mutex_unlock(&pf_dev->app_lock);
-	return ret;
+    mutex_unlock(&pf_dev->app_lock);
+    return ret;
 }
 
 /**
@@ -719,69 +874,69 @@ int kill_pf_dev_apps(struct pf_dev_struct *pf_dev, int sig)
  */
 int create_map_str(char **map_str, int *map_str_sz)
 {
-	int ret = 0;
-	int num_entries = 0;
-	struct pci_dev *pci = NULL;
-	struct pf_dev_struct *pf_dev = NULL;
-	char temp[BDF_STR_LEN + 11] = { 0 };  /* +11 for " %d %d\n\0" (3 digits) */
-	char *map = NULL;
-	int map_sz = 1;
+    int ret = 0;
+    int num_entries = 0;
+    struct pci_dev *pci = NULL;
+    struct pf_dev_struct *pf_dev = NULL;
+    char temp[BDF_STR_LEN + 11] = { 0 };  /* +11 for " %d %d\n\0" (3 digits) */
+    char *map = NULL;
+    int map_sz = 1;
 
-	if (!map_str || !map_str_sz || (*map_str) || (*map_str_sz != 0)) {
-		ret = -EINVAL;
-		goto fail;
-	}
+    if (!map_str || !map_str_sz || (*map_str) || (*map_str_sz != 0)) {
+        ret = -EINVAL;
+        goto fail;
+    }
 
-	map_sz = 1;
-	map = kzalloc(map_sz, GFP_KERNEL);
+    map_sz = 1;
+    map = kzalloc(map_sz, GFP_KERNEL);
 
-	if (!map) {
-		ret = -ENOMEM;
-		goto fail;
-	}
+    if (!map) {
+        ret = -ENOMEM;
+        goto fail;
+    }
 
-	while ((pci = pci_get_device(PCIE_VENDOR_ID, PCIE_DEVICE_ID, pci)) != NULL) {
-		if ((pci->driver) && (strcmp(pci->driver->name, DEFAULT_DEVICE_NAME) == 0)) {
-			pf_dev = pci_get_drvdata(pci);
-			sprintf(temp,
-				"%02x:%02x.%1x %d %d\n",
-				pci->bus->number,
-				PCI_SLOT(pci->devfn),
-				PCI_FUNC(pci->devfn),
-				MINOR(pf_dev->cdev.cdev_num),
-				pf_dev->hwmon_id);
+    while ((pci = pci_get_device(PCIE_VENDOR_ID, PCIE_DEVICE_ID, pci)) != NULL) {
+        if ((pci->driver) && (strcmp(pci->driver->name, DEFAULT_DEVICE_NAME) == 0)) {
+            pf_dev = pci_get_drvdata(pci);
+            sprintf(temp,
+                "%02x:%02x.%1x %d %d\n",
+                pci->bus->number,
+                PCI_SLOT(pci->devfn),
+                PCI_FUNC(pci->devfn),
+                MINOR(pf_dev->cdev.cdev_num),
+                pf_dev->hwmon_id);
 
-			strconcat(&map, temp, &map_sz);
-			num_entries++;
-		}
-	}
+            strconcat(&map, temp, &map_sz);
+            num_entries++;
+        }
+    }
 
-	/* Add number of entries to top of map. */
-	*map_str_sz = 1;
-	*map_str = kzalloc(*map_str_sz, GFP_KERNEL);
+    /* Add number of entries to top of map. */
+    *map_str_sz = 1;
+    *map_str = kzalloc(*map_str_sz, GFP_KERNEL);
 
-	if (!(*map_str)) {
-		ret = -ENOMEM;
-		goto fail;
-	}
+    if (!(*map_str)) {
+        ret = -ENOMEM;
+        goto fail;
+    }
 
-	sprintf(temp, "%d\n", num_entries);
-	strconcat(map_str, temp, map_str_sz);
-	strconcat(map_str, map, map_str_sz);
-	kfree(map);
-	return SUCCESS;
+    sprintf(temp, "%d\n", num_entries);
+    strconcat(map_str, temp, map_str_sz);
+    strconcat(map_str, map, map_str_sz);
+    kfree(map);
+    return SUCCESS;
 
 fail:
-	if (*map_str) {
-		kfree(*map_str);
-		*map_str = NULL;
-		*map_str_sz = 0;
-	}
+    if (*map_str) {
+        kfree(*map_str);
+        *map_str = NULL;
+        *map_str_sz = 0;
+    }
 
-	if (map)
-		kfree(map);
+    if (map)
+        kfree(map);
 
-	return ret;
+    return ret;
 }
 
 /**
@@ -793,22 +948,22 @@ fail:
  */
 static ssize_t devices_show(struct device_driver *drv, char *buf)
 {
-	int ret = 0;
-	char *map_str = NULL;
-	int map_str_sz = 0;
-	int n = 0;
+    int ret = 0;
+    char *map_str = NULL;
+    int map_str_sz = 0;
+    int n = 0;
 
-	if (!drv || !buf)
-		return 0;
+    if (!drv || !buf)
+        return 0;
 
-	ret = create_map_str(&map_str, &map_str_sz);
+    ret = create_map_str(&map_str, &map_str_sz);
 
-	if (!ret && map_str) {
-		n = sprintf(buf, "%s", map_str);
-		kfree(map_str);
-	}
+    if (!ret && map_str) {
+        n = sprintf(buf, "%s", map_str);
+        kfree(map_str);
+    }
 
-	return n;
+    return n;
 }
 static DRIVER_ATTR_RO(devices);
 
@@ -821,19 +976,19 @@ static DRIVER_ATTR_RO(devices);
  */
 static ssize_t version_show(struct device_driver *drv, char *buf)
 {
-	if (!drv || !buf)
-		return 0;
+    if (!drv || !buf)
+        return 0;
 
-	/* Format is MAJOR.MINOR.PATCH +COMMITS *STATUS */
-	return sprintf(
-		buf,
-		"%hhd.%hhd.%hhd +%hhd *%hhd\n",
-		GIT_TAG_VER_MAJOR,
-		GIT_TAG_VER_MINOR,
-		GIT_TAG_VER_PATCH,
-		GIT_TAG_VER_DEV_COMMITS,
-		GIT_STATUS
-	);
+    /* Format is MAJOR.MINOR.PATCH +COMMITS *STATUS */
+    return sprintf(
+        buf,
+        "%hhd.%hhd.%hhd +%hhd *%hhd\n",
+        GIT_TAG_VER_MAJOR,
+        GIT_TAG_VER_MINOR,
+        GIT_TAG_VER_PATCH,
+        GIT_TAG_VER_DEV_COMMITS,
+        GIT_STATUS
+    );
 }
 static DRIVER_ATTR_RO(version);
 
@@ -847,17 +1002,17 @@ static DRIVER_ATTR_RO(version);
  */
 static ssize_t ami_debug_enabled_store(struct device_driver *drv, const char *buf, size_t count)
 {
-	int set_output_status = 0;
+    int set_output_status = 0;
 
-	if (!drv || !buf)
-		return 0;
-	if (count > AMI_DEBUG_INPUT_LIMIT)
-		return -EINVAL;
+    if (!drv || !buf)
+        return 0;
+    if (count > AMI_DEBUG_INPUT_LIMIT)
+        return -EINVAL;
 
-	sscanf(buf, "%hhd", &set_output_status);
-	ami_debug_enabled = set_output_status;
+    sscanf(buf, "%hhd", &set_output_status);
+    ami_debug_enabled = set_output_status;
 
-	return count;
+    return count;
 }
 
 /**
@@ -869,68 +1024,72 @@ static ssize_t ami_debug_enabled_store(struct device_driver *drv, const char *bu
  */
 static ssize_t ami_debug_enabled_show(struct device_driver *drv, char *buf)
 {
-	if (!drv || !buf)
-		return 0;
+    if (!drv || !buf)
+        return 0;
 
-	return sprintf(buf, "%hhd\n", ami_debug_enabled);
+    return sprintf(buf, "%hhd\n", ami_debug_enabled);
 }
 static DRIVER_ATTR_RW(ami_debug_enabled);
 
 int __init vmc_entry(void)
 {
-	int ret = 0;
+    int ret = 0;
 
-	/* Init FAL for GCQ */
-	ret = ulFW_IF_GCQ_Init(&fw_if_gcq_init_cfg);
-	if (ret != FW_IF_ERRORS_NONE)
-		goto fail;
+    /* Init FAL for GCQ */
+    ret = ulFW_IF_GCQ_Init(&fw_if_gcq_init_cfg);
+    if (ret != FW_IF_ERRORS_NONE)
+        goto fail;
 
-	PR_DBG("Loading driver to the kernel");
+    PR_DBG("Loading driver to the kernel");
 
-	/* Register the device driver with the kernel */
-	ret = register_driver_kernel();
-	if (ret)
-		goto fail;
+        ret = register_proc_file();
+        if (ret)
+                goto fail;
 
-	/* Register the device driver with the PCIE Core */
-	ret = register_driver_pcie();
-	if (ret)
-		goto unreg_drv_krnl_pf0;
+    /* Register the device driver with the kernel */
+    ret = register_driver_kernel();
+    if (ret)
+        goto fail;
 
-	/* Create 'devices' attribute */
-	ret = driver_create_file(&pcie_driver_core.driver, &driver_attr_devices);
-	if (ret)
-		goto unreg_drv_pci;
+    /* Register the device driver with the PCIE Core */
+    ret = register_driver_pcie();
+    if (ret)
+        goto unreg_drv_krnl_pf0;
 
-	/* Create 'version' attribute */
-	ret = driver_create_file(&pcie_driver_core.driver, &driver_attr_version);
-	if (ret)
-		goto remove_device_attr;
+    /* Create 'devices' attribute */
+    ret = driver_create_file(&pcie_driver_core.driver, &driver_attr_devices);
+    if (ret)
+        goto unreg_drv_pci;
 
-	/* Create 'ami_debug_enabled' attribute */
-	ret = driver_create_file(&pcie_driver_core.driver, &driver_attr_ami_debug_enabled);
-	if (ret)
-		goto remove_version_attr;
+    /* Create 'version' attribute */
+    ret = driver_create_file(&pcie_driver_core.driver, &driver_attr_version);
+    if (ret)
+        goto remove_device_attr;
 
-	PR_INFO("Successfully loaded driver to the kernel");
-	ami_debug_enabled = false;
-	return SUCCESS;
+    /* Create 'ami_debug_enabled' attribute */
+    ret = driver_create_file(&pcie_driver_core.driver, &driver_attr_ami_debug_enabled);
+    if (ret)
+        goto remove_version_attr;
+
+    PR_INFO("Successfully loaded driver to the kernel");
+    ami_debug_enabled = false;
+    return SUCCESS;
 
 remove_version_attr:
-	driver_remove_file(&pcie_driver_core.driver, &driver_attr_version);
+    driver_remove_file(&pcie_driver_core.driver, &driver_attr_version);
 
 remove_device_attr:
-	driver_remove_file(&pcie_driver_core.driver, &driver_attr_devices);
+    driver_remove_file(&pcie_driver_core.driver, &driver_attr_devices);
 
 unreg_drv_pci:
-	pci_unregister_driver(&pcie_driver_core);
+    pci_unregister_driver(&pcie_driver_core);
 
 unreg_drv_krnl_pf0:
-	unregister_driver_kernel();
+    unregister_driver_kernel();
 
 fail:
-	PR_ERR("Failed to load driver to the kernel");
-	return ret;
+    PR_ERR("Failed to load driver to the kernel");
+    return ret;
 }
 
 /* Module cleanup function
@@ -940,19 +1099,23 @@ fail:
  */
 void __exit vmc_exit(void)
 {
-	PR_DBG("Removing driver from the kernel");
-	PR_DBG("Unregister driver from PCIE Stack");
+    PR_DBG("Removing driver from the kernel");
+    PR_DBG("Unregister driver from PCIE Stack");
 
-	/* Remove attributes */
-	driver_remove_file(&pcie_driver_core.driver, &driver_attr_devices);
-	driver_remove_file(&pcie_driver_core.driver, &driver_attr_version);
-	driver_remove_file(&pcie_driver_core.driver, &driver_attr_ami_debug_enabled);
+    /* Remove attributes */
+    driver_remove_file(&pcie_driver_core.driver, &driver_attr_devices);
+    driver_remove_file(&pcie_driver_core.driver, &driver_attr_version);
+    driver_remove_file(&pcie_driver_core.driver, &driver_attr_ami_debug_enabled);
 
-	/* Unregister driver */
-	pci_unregister_driver(&pcie_driver_core);
-	unregister_driver_kernel();
+    /* Unregister driver */
+    pci_unregister_driver(&pcie_driver_core);
+    unregister_driver_kernel();
 
-	PR_INFO("Successfully removed driver");
+        /* remove proc entry */
+        remove_proc_entry(PROC_ENTRY_FILENAME, NULL);
+        PR_DBG("/proc/%s removed\n", PROC_ENTRY_FILENAME);
+
+    PR_INFO("Successfully removed driver");
 }
 
 module_init(vmc_entry);
