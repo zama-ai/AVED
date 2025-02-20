@@ -289,8 +289,8 @@ struct amc_proxy_cmd_peekpoke_payload {
         uint64_t address;
         uint32_t req_type:1;
         uint32_t len:8;
-        uint32_t offset:16;
-        uint32_t resvd:7;
+        uint32_t offset:20;
+        uint32_t resvd:3;
 };
 
 struct amc_proxy_cmd_iop_push_payload {

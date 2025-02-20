@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * cmd_peek.c - This file contains the implementation for the command "peek"
- * 
+ *
  * Copyright (c) 2023-present Advanced Micro Devices, Inc. All rights reserved.
  */
 
@@ -33,7 +33,7 @@
 
 /**
  * do_cmd_peek() - "peek" command callback.
- * 
+ *
  * For parameters and return value see the definition for `app_command`.
  */
 static int do_cmd_peek(struct app_option *options, int num_args, char **args);
@@ -139,19 +139,9 @@ static int do_cmd_peek(struct app_option *options, int num_args, char **args)
 
     ami_dev_get_pci_bdf(dev, &bdf);
 
-    //printf(
-    //    "Reading %d byte(s) from device %02x:%02x.%01x"
-    //    " at offset 0x%02x\r\n\r\n",
-    //    num, AMI_PCI_BUS(bdf), AMI_PCI_DEV(bdf), AMI_PCI_FUNC(bdf), offset
-    //);
-
     if((offset & 0x3U) != 0) {
         offset = offset & 0xFFFFFFFCU;
         printf("\n[WARNING] Offset address is unaligned, this will make issues on the GCQ. Filtering out to 0x%x \n", offset);
-    }
-    if (offset > 0x1e0) {
-        printf("\nOffset 0x%x is higher than max addr of hpu regif.\n", offset);
-        return EXIT_FAILURE;
     }
 
     buf = (uint32_t*)calloc(num, sizeof(uint32_t));

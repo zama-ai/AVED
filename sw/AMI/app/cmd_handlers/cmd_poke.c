@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * cmd_poke.c - This file contains the implementation for the command "poke"
- * 
+ *
  * Copyright (c) 2023-present Advanced Micro Devices, Inc. All rights reserved.
  */
 
@@ -32,7 +32,7 @@
 
 /**
  * do_cmd_poke() - "poke" command callback.
- * 
+ *
  * For parameters and return value see the definition for `app_command`.
  */
 static int do_cmd_poke(struct app_option *options, int num_args, char **args);
@@ -47,7 +47,7 @@ static int do_cmd_poke(struct app_option *options, int num_args, char **args);
  * a: Offset
  * i: Input value
  * I: Input file
- * 
+ *
  * i and I are mutually exclusive.
  */
 static const char short_options[] = "hd:a:i:I:";
@@ -152,38 +152,24 @@ static int do_cmd_poke(struct app_option *options, int num_args, char **args)
         }
     }
 
-    //printf(
-    //    "\n Writing the following data to device %x:%x.%x"
-    //    " at offset 0x%x\r\n\r\n", AMI_PCI_BUS(bdf), AMI_PCI_DEV(bdf), AMI_PCI_FUNC(bdf), offset
-    //);
-
     if((offset & 0x3U) != 0) {
         offset = offset & 0xFFFFFFFCU;
         printf("\n[WARNING] Offset address is unaligned, this will make issues on the GCQ. Filtering out to 0x%x \n", offset);
     }
-    if (offset > 0x1e0) {
-        printf("\nOffset 0x%x is higher than max addr of hpu regif.\n", offset);
-        return EXIT_FAILURE;
+
+    ret = ami_poke(dev, offset, num, buf);
+
+    if (ret == AMI_STATUS_OK) {
+        ret = EXIT_SUCCESS;
+        printf("Successfully wrote to %d register(s)\r\n", num);
+    } else {
+        APP_API_ERROR("could not write data");
     }
-
-    //if ((NULL != find_app_option('F', options)) || confirm_action(APP_CONFIRM_PROMPT, 'Y', 3)) {
-        ret = ami_poke(dev, offset, num, buf);
-
-        if (ret == AMI_STATUS_OK) {
-            ret = EXIT_SUCCESS;
-            printf("Successfully wrote to %d register(s)\r\n", num);
-        } else {
-            APP_API_ERROR("could not write data");
-        }
-    //} else {
-    //    ret = EXIT_SUCCESS;
-    //    printf("\r\nAborting...\r\n");
-    //}
 
 done:
     if (buf)
         free(buf);
-    
+
     ami_dev_delete(&dev);
     return ret;
 }
