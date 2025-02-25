@@ -1044,7 +1044,7 @@ int __init vmc_entry(void)
 
     ret = register_proc_file();
     if (ret)
-            goto fail;
+        goto fail;
 
     /* Register the device driver with the kernel */
     ret = register_driver_kernel();
