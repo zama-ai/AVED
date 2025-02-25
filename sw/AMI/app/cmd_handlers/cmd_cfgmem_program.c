@@ -133,7 +133,7 @@ static void progress_handler(enum ami_event_status status, uint64_t ctr, void *d
 }
 
 /* Extracting path from current.
- * 
+ *
 */
 char* extract_path(const char* input) {
     const char* end = strstr(input, ".pdi");
@@ -188,6 +188,9 @@ static int do_cmd_cfgmem_program(struct app_option *options, int num_args, char 
     char new_uuid[AMI_LOGIC_UUID_SIZE] = { 0 };
     char current_uuid[AMI_LOGIC_UUID_SIZE] = { 0 };
 
+    char *vivado_path = getenv("XILINX_VIVADO_PATH");
+    char *tool_version = getenv("XILINX_TOOL_VERSION");
+
     /* Must have at least an image and device. */
     if (!options) {
         APP_USER_ERROR("not enough options", help_msg);
@@ -221,14 +224,21 @@ static int do_cmd_cfgmem_program(struct app_option *options, int num_args, char 
         return AMI_STATUS_ERROR;
     } else {
         char* path = extract_path(image->arg);
-        
+
         if (path != NULL) {
             printf("Extracted path: %s\n\n", path);
             char command[255];
 
-            // using sudo, we cannot access user variables, we are in root 
-            int result = snprintf(command, sizeof(command), "/opt/xilinx/Vivado/2024.1/bin/bootgen -arch versal -read %s | grep rpu_subsystem", path);
-            // int result = snprintf(command, sizeof(command), strcat(getenv("XILINX_VIVADO"), "/bin/bootgen -arch versal -read %s | grep rpu_subsystem"), path);
+            // using sudo, we cannot access user variables, we are in root
+            printf("[INFO]: vivado_path  %s \n", vivado_path);
+            printf("[INFO]: tool_version %s \n\n", tool_version);
+
+            if (!vivado_path || !tool_version) {
+                fprintf(stderr, "Required environment variables not set: you must launch this command with -E !\n");
+                exit(EXIT_FAILURE);
+            }
+
+            int result = snprintf(command, sizeof(command), "%s/%s/bin/bootgen -arch versal -read %s | grep rpu_subsystem", vivado_path, tool_version, path);
 
             if (result < 0 || (size_t)result >= sizeof(command)) {
                 fprintf(stderr, "Error: Command string truncated or formatting failed\n");
