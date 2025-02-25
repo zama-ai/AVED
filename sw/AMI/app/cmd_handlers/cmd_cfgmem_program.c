@@ -74,31 +74,31 @@ static void progress_handler(enum ami_event_status status, uint64_t ctr, void *d
 static const char short_options[] = "hd:t:i:p:yq";
 
 static const struct option long_options[] = {
-	{ "help", no_argument, NULL, 'h' },  /* help screen */
-	{ },
+    { "help", no_argument, NULL, 'h' },  /* help screen */
+    { },
 };
 
 static const char help_msg[] = \
-	"cfgmem_program - program a bitstream onto a device\r\n"
-	"\r\nThis command requires root/sudo permissions.\r\n"
-	"\r\nUsage:\r\n"
-	"\t" APP_NAME " cfgmem_program -d <bdf> -t <type> -i <path> -p <n>\r\n"
-	"\r\nOptions:\r\n"
-	"\t-h --help             Show this screen\r\n"
-	"\t-d <b>:[d].[f]        Specify the device BDF\r\n"
-	"\t-t <type>             Specify the boot device type (primary or secondary)\r\n"
-	"\t-i <path>             Path to image file\r\n"
-	"\t-p <partition>        Partition to flash\r\n"
-	"\t-y                    Skip confirmation\r\n"
-	"\t-q                    Quit after programming\r\n"
+    "cfgmem_program - program a bitstream onto a device\r\n"
+    "\r\nThis command requires root/sudo permissions.\r\n"
+    "\r\nUsage:\r\n"
+    "\t" APP_NAME " cfgmem_program -d <bdf> -t <type> -i <path> -p <n>\r\n"
+    "\r\nOptions:\r\n"
+    "\t-h --help             Show this screen\r\n"
+    "\t-d <b>:[d].[f]        Specify the device BDF\r\n"
+    "\t-t <type>             Specify the boot device type (primary or secondary)\r\n"
+    "\t-i <path>             Path to image file\r\n"
+    "\t-p <partition>        Partition to flash\r\n"
+    "\t-y                    Skip confirmation\r\n"
+    "\t-q                    Quit after programming\r\n"
 ;
 
 struct app_cmd cmd_cfgmem_program = {
-	.callback	= &do_cmd_cfgmem_program,
-	.short_options	= short_options,
-	.long_options	= long_options,
-	.root_required	= true,
-	.help_msg	= help_msg
+    .callback       = &do_cmd_cfgmem_program,
+    .short_options  = short_options,
+    .long_options   = long_options,
+    .root_required  = true,
+    .help_msg       = help_msg
 };
 
 /*****************************************************************************/
@@ -110,26 +110,57 @@ struct app_cmd cmd_cfgmem_program = {
  */
 static void progress_handler(enum ami_event_status status, uint64_t ctr, void *data)
 {
-	struct ami_pdi_progress *prog = NULL;
+    struct ami_pdi_progress *prog = NULL;
 
-	if (!data)
-		return;
+    if (!data)
+        return;
 
-	prog = (struct ami_pdi_progress*)data;
+    prog = (struct ami_pdi_progress*)data;
 
-	if (status == AMI_EVENT_STATUS_OK)
-		prog->bytes_written += ctr;
+    if (status == AMI_EVENT_STATUS_OK)
+        prog->bytes_written += ctr;
 
-	prog->reserved = print_progress_bar(
-		prog->bytes_written,
-		prog->bytes_to_write,
-		PROGRESS_BAR_WIDTH,
-		'[',
-		']',
-		'#',
-		'.',
-		prog->reserved
-	);
+    prog->reserved = print_progress_bar(
+        prog->bytes_written,
+        prog->bytes_to_write,
+        PROGRESS_BAR_WIDTH,
+        '[',
+        ']',
+        '#',
+        '.',
+        prog->reserved
+    );
+}
+
+/* Extracting path from current.
+ *
+*/
+char* extract_path(const char* input) {
+    const char* end = strstr(input, ".pdi");
+
+    if (end == NULL) {
+        APP_API_ERROR("could not find pdi path");
+    }
+
+    // Move to the end of ".pdi"
+    end += 4;
+
+    // Find the start of the path (first non-space character before ".pdi")
+    const char* start = end;
+    while (start > input && *(start - 1) != ' ') {
+        start--;
+    }
+
+    size_t length = end - start;
+    char* result = (char*)malloc(length + 1);
+    if (result == NULL) {
+        return NULL;
+    }
+
+    strncpy(result, start, length);
+    result[length] = '\0';
+
+    return result;
 }
 
 /*
@@ -137,144 +168,181 @@ static void progress_handler(enum ami_event_status status, uint64_t ctr, void *d
  */
 static int do_cmd_cfgmem_program(struct app_option *options, int num_args, char **args)
 {
-	int ret = EXIT_FAILURE;
+    int ret = EXIT_FAILURE;
 
-	/* Required options */
-	struct app_option *device = NULL;
-	struct app_option *boot_device_type = NULL;
-	struct app_option *image = NULL;
-	struct app_option *partition = NULL;
+    /* Required options */
+    struct app_option *device = NULL;
+    struct app_option *boot_device_type = NULL;
+    struct app_option *image = NULL;
+    struct app_option *partition = NULL;
 
-	/* Required data */
-	uint16_t bdf = 0;
-	ami_device *dev = NULL;
-	int selected_boot_device = 0;
-	uint32_t partition_number = 0;
+    /* Required data */
+    uint16_t bdf = 0;
+    ami_device *dev = NULL;
+    int selected_boot_device = 0;
+    uint32_t partition_number = 0;
 
-	/* For UUID checks */
-	int found_current_uuid = AMI_STATUS_ERROR;
-	int found_new_uuid = AMI_STATUS_ERROR;
-	char new_uuid[AMI_LOGIC_UUID_SIZE] = { 0 };
-	char current_uuid[AMI_LOGIC_UUID_SIZE] = { 0 };
+    /* For UUID checks */
+    int found_current_uuid = AMI_STATUS_ERROR;
+    int found_new_uuid = AMI_STATUS_ERROR;
+    char new_uuid[AMI_LOGIC_UUID_SIZE] = { 0 };
+    char current_uuid[AMI_LOGIC_UUID_SIZE] = { 0 };
 
-	/* Must have at least an image and device. */
-	if (!options) {
-		APP_USER_ERROR("not enough options", help_msg);
-		return EXIT_FAILURE;
-	}
+    char *vivado_path = getenv("XILINX_VIVADO_PATH");
+    char *tool_version = getenv("XILINX_TOOL_VERSION");
 
-	/* Device and image are required. TODO: Should these be positional args? */
-	device = find_app_option('d', options);
-	boot_device_type = find_app_option('t', options);
-	image = find_app_option('i', options);
-	partition = find_app_option('p', options);
+    /* Must have at least an image and device. */
+    if (!options) {
+        APP_USER_ERROR("not enough options", help_msg);
+        return EXIT_FAILURE;
+    }
 
-	if (!device || !boot_device_type || !image || !partition) {
-		APP_USER_ERROR("not enough arguments", help_msg);
-		return AMI_STATUS_ERROR;
-	}
+    /* Device and image are required. TODO: Should these be positional args? */
+    device = find_app_option('d', options);
+    boot_device_type = find_app_option('t', options);
+    image = find_app_option('i', options);
+    partition = find_app_option('p', options);
 
-	if (strcmp(boot_device_type->arg, "primary") == 0) {
-		selected_boot_device = AMI_BOOT_DEVICES_PRIMARY;
-	} else if (strcmp(boot_device_type->arg, "secondary") == 0) {
-		selected_boot_device = AMI_BOOT_DEVICES_SECONDARY;
-	} else {
-		APP_USER_ERROR("provided boot device does not exist", help_msg);
-		return AMI_STATUS_ERROR;
-	}
+    if (!device || !boot_device_type || !image || !partition) {
+        APP_USER_ERROR("not enough arguments", help_msg);
+        return AMI_STATUS_ERROR;
+    }
 
-	/* Check that the provided PDI image exists. */
-	if (access(image->arg, F_OK) != AMI_LINUX_STATUS_OK) {
-		/* File does not exist */
-		APP_ERROR("provided image does not exist");
-		return AMI_STATUS_ERROR;
-	}
+    if (strcmp(boot_device_type->arg, "primary") == 0) {
+        selected_boot_device = AMI_BOOT_DEVICES_PRIMARY;
+    } else if (strcmp(boot_device_type->arg, "secondary") == 0) {
+        selected_boot_device = AMI_BOOT_DEVICES_SECONDARY;
+    } else {
+        APP_USER_ERROR("provided boot device does not exist", help_msg);
+        return AMI_STATUS_ERROR;
+    }
 
-	/* Find device */
-	if (ami_dev_find(device->arg, &dev) != AMI_STATUS_OK) {
-		APP_API_ERROR("could not find the requested device");
-		return AMI_STATUS_ERROR;
-	}
+    /* Check that the provided PDI image exists. */
+    if (access(image->arg, F_OK) != AMI_LINUX_STATUS_OK) {
+        /* File does not exist */
+        APP_ERROR("provided image does not exist");
+        return AMI_STATUS_ERROR;
+    } else {
+        char* path = extract_path(image->arg);
 
-	/* Check compatibility mode */
-	warn_compat_mode(dev);
+        if (path != NULL) {
+            printf("Extracted path: %s\n\n", path);
+            char command[255];
 
-	ami_dev_get_pci_bdf(dev, &bdf);
+            // using sudo, we cannot access user variables, we are in root
+            printf("[INFO]: vivado_path  %s \n", vivado_path);
+            printf("[INFO]: tool_version %s \n\n", tool_version);
 
-	found_current_uuid = ami_dev_read_uuid(dev, current_uuid);
-	found_new_uuid = find_logic_uuid(image->arg, new_uuid);
-	partition_number = (uint32_t)strtoul(partition->arg, NULL, 0);
+            if (!vivado_path || !tool_version) {
+                fprintf(stderr, "Required environment variables not set: you must launch this command with -E !\n");
+                exit(EXIT_FAILURE);
+            }
 
-	printf(
-		"----------------------------------------------\r\n"
-		"Device | %02x:%02x.%01x\r\n"
-		"----------------------------------------------\r\n"
-		"Current Configuration\r\n"
-		"----------------------------------------------\r\n"
-		"UUID   | %s\r\n"
-		"----------------------------------------------\r\n"
-		"Incoming Configuration\r\n"
-		"----------------------------------------------\r\n"
-		"UUID      | %s\r\n"
-		"Path      | %s\r\n"
-		"Partition | %d\r\n"
-		"----------------------------------------------\r\n",
-		AMI_PCI_BUS(bdf),
-		AMI_PCI_DEV(bdf),
-		AMI_PCI_FUNC(bdf),
-		((found_current_uuid != AMI_STATUS_OK) ? ("N/A") : (current_uuid)),
-		((found_new_uuid != AMI_STATUS_OK) ? ("N/A") : (new_uuid)),
-		image->arg,
-		partition_number
-	);
+            int result = snprintf(command, sizeof(command), "%s/%s/bin/bootgen -arch versal -read %s | grep rpu_subsystem", vivado_path, tool_version, path);
 
-	if ((NULL != find_app_option('y', options)) || confirm_action(APP_CONFIRM_PROMPT, 'Y', 3)) {
-		printf("\r\nUpdating base flash image...\r\n");
+            if (result < 0 || (size_t)result >= sizeof(command)) {
+                fprintf(stderr, "Error: Command string truncated or formatting failed\n");
+            }
 
-		if (ami_prog_download_pdi(dev,
-					  image->arg,
-					  selected_boot_device,
-					  partition_number,
-					  progress_handler) == AMI_STATUS_OK) {
-			printf("\r\nImage programming complete.\r\n");
+            int test = system(command);
 
-			if ((NULL == find_app_option('q', options)) &&
-			    (AMI_BOOT_DEVICES_PRIMARY == selected_boot_device)) {
-				/* If we're not quitting, set the device boot partition */
-				printf("Will do a hot reset to boot into partition %d. This may take a minute...\r\n",
-				       partition_number);
+            if(test != 0) {
+                printf("[ERROR]: RPU partition not found!\n\n");
+                return EXIT_FAILURE;
+            } else {
+                printf("[INFO]: RPU partition has been found!\n\n");
+            }
+            free(path);
+        } else {
+            printf("Path not found\n");
+        }
+    }
 
-				if (ami_prog_device_boot(&dev, partition_number) == AMI_STATUS_OK) {
-					ret = EXIT_SUCCESS;
+    /* Find device */
+    if (ami_dev_find(device->arg, &dev) != AMI_STATUS_OK) {
+        APP_API_ERROR("could not find the requested device");
+        return AMI_STATUS_ERROR;
+    }
 
-					printf(
-						"\r\nOK. Image has been programmed successfully.\r\n"
-						"***********************************************\r\n"
-						"Hot reset has been performed into partition %d.\r\n"
-						"***********************************************\r\n",
-						partition_number
-					);
-				} else {
-					APP_API_ERROR("could not select boot partition");
-				}
-			} else {
-				ret = EXIT_SUCCESS;
+    /* Check compatibility mode */
+    warn_compat_mode(dev);
 
-				printf(
-					"\r\nOK. Image has been programmed successfully.\r\n"
-					"****************************************************\r\n"
-					"Cold reboot machine to load the new image on device.\r\n"
-					"****************************************************\r\n"
-				);
-			}
-		} else {
-			APP_API_ERROR("could not program image");
-		}
-	} else {
-		ret = EXIT_SUCCESS;
-		printf("\r\nAborting...\r\n");
-	}
+    ami_dev_get_pci_bdf(dev, &bdf);
 
-	ami_dev_delete(&dev);
-	return ret;
+    found_current_uuid = ami_dev_read_uuid(dev, current_uuid);
+    found_new_uuid = find_logic_uuid(image->arg, new_uuid);
+    partition_number = (uint32_t)strtoul(partition->arg, NULL, 0);
+
+    printf(
+        "----------------------------------------------\r\n"
+        "Device | %02x:%02x.%01x\r\n"
+        "----------------------------------------------\r\n"
+        "Current Configuration\r\n"
+        "----------------------------------------------\r\n"
+        "UUID   | %s\r\n"
+        "----------------------------------------------\r\n"
+        "Incoming Configuration\r\n"
+        "----------------------------------------------\r\n"
+        "UUID      | %s\r\n"
+        "Path      | %s\r\n"
+        "Partition | %d\r\n"
+        "----------------------------------------------\r\n",
+        AMI_PCI_BUS(bdf),
+        AMI_PCI_DEV(bdf),
+        AMI_PCI_FUNC(bdf),
+        ((found_current_uuid != AMI_STATUS_OK) ? ("N/A") : (current_uuid)),
+        ((found_new_uuid != AMI_STATUS_OK) ? ("N/A") : (new_uuid)),
+        image->arg,
+        partition_number
+    );
+
+    if ((NULL != find_app_option('y', options)) || confirm_action(APP_CONFIRM_PROMPT, 'Y', 3)) {
+        printf("\r\nUpdating base flash image...\r\n");
+
+        if (ami_prog_download_pdi(dev,
+                      image->arg,
+                      selected_boot_device,
+                      partition_number,
+                      progress_handler) == AMI_STATUS_OK) {
+            printf("\r\nImage programming complete.\r\n");
+
+            if ((NULL == find_app_option('q', options)) &&
+                (AMI_BOOT_DEVICES_PRIMARY == selected_boot_device)) {
+                /* If we're not quitting, set the device boot partition */
+                printf("Will do a hot reset to boot into partition %d. This may take a minute...\r\n",
+                       partition_number);
+
+                if (ami_prog_device_boot(&dev, partition_number) == AMI_STATUS_OK) {
+                    ret = EXIT_SUCCESS;
+
+                    printf(
+                        "\r\nOK. Image has been programmed successfully.\r\n"
+                        "***********************************************\r\n"
+                        "Hot reset has been performed into partition %d.\r\n"
+                        "***********************************************\r\n",
+                        partition_number
+                    );
+                } else {
+                    APP_API_ERROR("could not select boot partition");
+                }
+            } else {
+                ret = EXIT_SUCCESS;
+
+                printf(
+                    "\r\nOK. Image has been programmed successfully.\r\n"
+                    "****************************************************\r\n"
+                    "Cold reboot machine to load the new image on device.\r\n"
+                    "****************************************************\r\n"
+                );
+            }
+        } else {
+            APP_API_ERROR("could not program image");
+        }
+    } else {
+        ret = EXIT_SUCCESS;
+        printf("\r\nAborting...\r\n");
+    }
+
+    ami_dev_delete(&dev);
+    return ret;
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * ami_ioctl.h - This file contains definitions for the AMI IOCTL interface
- * 
+ *
  * Copyright (c) 2023-present Advanced Micro Devices, Inc. All rights reserved.
  */
 
@@ -25,8 +25,8 @@
  * TODO: Can we use a single kernel header instead?
  */
 
-#define AMI_IOC_FPT_UPDATE_MAGIC	(0xAAAAAAAA)
-#define AMI_IOC_SENSOR_STATUS_LEN	(40)
+#define AMI_IOC_FPT_UPDATE_MAGIC     (0xAAAAAAAA)
+#define AMI_IOC_SENSOR_STATUS_LEN    (40)
 
 /**
  * struct ami_ioc_data_payload - payload struct for dynamically sized ioctl data
@@ -51,16 +51,16 @@
  * PDI image!
  */
 struct ami_ioc_data_payload {
-	uint32_t       size;
-	unsigned long  addr;
-	uint8_t        boot_device;
-	uint32_t       partition;
-	uint32_t       src_device;
-	uint32_t       src_part;
-	uint32_t       dest_device;
-	uint32_t       dest_part;
-	bool           cap_override;
-	int            efd;
+    uint32_t       size;
+    unsigned long  addr;
+    uint8_t        boot_device;
+    uint32_t       partition;
+    uint32_t       src_device;
+    uint32_t       src_part;
+    uint32_t       dest_device;
+    uint32_t       dest_part;
+    bool           cap_override;
+    int            efd;
 };
 
 /**
@@ -70,21 +70,21 @@ struct ami_ioc_data_payload {
  * @bar_idx: Bar number.
  * @offset: Offset within BAR.
  * @cap_override: Bypass permission checks. This may not apply to all IOCTL's.
- * 
+ *
  * Note that this struct can be used for either read or write transactions.
  *
  * For reading a BAR, `addr` is the userspace address of a uint32 buffer to be
  * populated with data read from the BAR and `num` is the number of values to read.
- * 
+ *
  * To write to a BAR, `addr` is the userspace address of the uint32 buffer to
  * write and `num` is the number of values to write.
  */
 struct ami_ioc_bar_data {
-	uint32_t       num;
-	unsigned long  addr;
-	uint8_t        bar_idx;
-	uint64_t       offset;
-	bool           cap_override;
+    uint32_t       num;
+    unsigned long  addr;
+    uint8_t        bar_idx;
+    uint64_t       offset;
+    bool           cap_override;
 };
 
 
@@ -94,14 +94,14 @@ struct ami_ioc_bar_data {
  * @IOC_SENSOR_TYPE_VOLTAGE: Voltage sensor ("in" in hwmon)
  * @IOC_SENSOR_TYPE_CURRENT: Current sensor ("curr" in hwmon)
  * @IOC_SENSOR_TYPE_POWER: Power sensor ("power" in hwmon)
- * 
+ *
  * This enum is to be used in conjunction with `struct ami_ioc_sensor_value`.
  */
 enum ami_ioc_sensor_type {
-	IOC_SENSOR_TYPE_TEMP,
-	IOC_SENSOR_TYPE_VOLTAGE,
-	IOC_SENSOR_TYPE_CURRENT,
-	IOC_SENSOR_TYPE_POWER,
+    IOC_SENSOR_TYPE_TEMP,
+    IOC_SENSOR_TYPE_VOLTAGE,
+    IOC_SENSOR_TYPE_CURRENT,
+    IOC_SENSOR_TYPE_POWER,
 };
 
 /**
@@ -111,18 +111,18 @@ enum ami_ioc_sensor_type {
  * @fresh: Whether or not the value/status were read from the cache. Populated by the driver.
  * @hwmon_channel: The hwmon sensor channel number. This is passed in from userspace.
  * @sensor_type: Sensor type. This is passed in from userspace.
- * 
+ *
  * This API is provided as an alternative to hwmon due to a possible race condition
  * where the user would have to read two separate hwmon files to fetch both the
  * sensor value and its status. Currently, this is only supported for the
  * instantaneous value of a sensor.
  */
 struct ami_ioc_sensor_value {
-	long    val;
-	char    status[AMI_IOC_SENSOR_STATUS_LEN];
-	bool    fresh;
-	int     hwmon_channel;
-	int     sensor_type;
+    long    val;
+    char    status[AMI_IOC_SENSOR_STATUS_LEN];
+    bool    fresh;
+    int     hwmon_channel;
+    int     sensor_type;
 };
 
 /**
@@ -132,16 +132,16 @@ struct ami_ioc_sensor_value {
  * @hdr_size: The size of the header in bytes. Populated by the driver.
  * @entry_size: The entry size in bytes. Populated by the driver.
  * @num_entries: The number of partitions. Populated by the driver.
- * 
+ *
  * This struct is to be use in conjunction with `struct ami_ioc_fpt_hdr_value` to get the
  * individual partition information.
  */
 struct ami_ioc_fpt_hdr_value {
-	uint8_t boot_device;
-	uint8_t version;
-	uint8_t hdr_size;
-	uint8_t entry_size;
-	uint8_t num_entries;
+    uint8_t boot_device;
+    uint8_t version;
+    uint8_t hdr_size;
+    uint8_t entry_size;
+    uint8_t num_entries;
 };
 
 /**
@@ -153,11 +153,11 @@ struct ami_ioc_fpt_hdr_value {
  * @partition_size: The partition size. Populated by the driver.
  */
 struct ami_ioc_fpt_partition_value {
-	uint8_t  boot_device;
-	uint32_t partition;
-	uint32_t type;
-	uint32_t base_addr;
-	uint32_t partition_size;
+    uint8_t  boot_device;
+    uint32_t partition;
+    uint32_t type;
+    uint32_t base_addr;
+    uint32_t partition_size;
 };
 
 /**
@@ -167,9 +167,15 @@ struct ami_ioc_fpt_partition_value {
  * @offset: Offset from the EEPROM base address.
  */
 struct ami_ioc_eeprom_payload {
-        unsigned long  addr;
-	uint8_t        len;
-	uint8_t        offset;
+    unsigned long  addr;
+    uint8_t        len;
+    uint8_t        offset;
+};
+
+struct ami_ioc_peek_poke_payload {
+    unsigned long  addr;
+    uint32_t len;
+    uint32_t offset;
 };
 
 /**
@@ -181,11 +187,11 @@ struct ami_ioc_eeprom_payload {
  * @offset: Offset within page.
  */
 struct ami_ioc_module_payload {
-	unsigned long addr;
-	uint8_t       device_id;
-	uint8_t       page;
-	uint8_t       len;
-	uint8_t       offset;
+    unsigned long addr;
+    uint8_t       device_id;
+    uint8_t       page;
+    uint8_t       len;
+    uint8_t       offset;
 };
 
 /**
@@ -194,27 +200,29 @@ struct ami_ioc_module_payload {
  * @IOC_APP_SETUP_DEREGISTER: Deregister a process from a device.
  */
 enum ami_ioc_app_setup {
-	IOC_APP_SETUP_REGISTER,
-	IOC_APP_SETUP_DEREGISTER,
+    IOC_APP_SETUP_REGISTER,
+    IOC_APP_SETUP_DEREGISTER,
 };
 
-#define AMI_IOC_MAGIC			'a'
-#define AMI_IOC_DOWNLOAD_PDI		_IOW(AMI_IOC_MAGIC, 0, struct ami_ioc_data_payload*)
-#define AMI_IOC_READ_BAR		_IOWR(AMI_IOC_MAGIC, 1, struct ami_ioc_bar_data*)
-#define AMI_IOC_WRITE_BAR		_IOW(AMI_IOC_MAGIC, 2, struct ami_ioc_bar_data*)
-#define AMI_IOC_GET_SENSOR_VALUE	_IOWR(AMI_IOC_MAGIC, 3, struct ami_ioc_sensor_value*)
-#define AMI_IOC_DEVICE_BOOT		_IOW(AMI_IOC_MAGIC, 4, struct ami_ioc_data_payload*)
-#define AMI_IOC_COPY_PARTITION		_IOW(AMI_IOC_MAGIC, 5, struct ami_ioc_data_payload*)
-#define AMI_IOC_SET_SENSOR_REFRESH	_IOW(AMI_IOC_MAGIC, 6, uint16_t)
-#define AMI_IOC_GET_FPT_HDR		_IOR(AMI_IOC_MAGIC, 7, struct ami_ioc_fpt_hdr_value*)
-#define AMI_IOC_GET_FPT_PARTITION	_IOWR(AMI_IOC_MAGIC, 8, struct ami_ioc_fpt_partition_value*)
-#define AMI_IOC_READ_EEPROM		_IOWR(AMI_IOC_MAGIC, 9, struct ami_ioc_eeprom_payload*)
-#define AMI_IOC_WRITE_EEPROM		_IOW(AMI_IOC_MAGIC, 10, struct ami_ioc_eeprom_payload*)
-#define AMI_IOC_APP_SETUP		_IOW(AMI_IOC_MAGIC, 11, enum ami_ioc_app_setup)
-#define AMI_IOC_READ_MODULE		_IOW(AMI_IOC_MAGIC, 12, struct ami_ioc_module_payload*)
-#define AMI_IOC_WRITE_MODULE		_IOW(AMI_IOC_MAGIC, 13, struct ami_ioc_module_payload*)
-#define AMI_IOC_DEBUG_VERBOSITY		_IOW(AMI_IOC_MAGIC, 14, uint8_t)
-#define AMI_IOC_MAX			(15)
+#define AMI_IOC_MAGIC               'a'
+#define AMI_IOC_DOWNLOAD_PDI        _IOW(AMI_IOC_MAGIC, 0, struct ami_ioc_data_payload)
+#define AMI_IOC_READ_BAR            _IOWR(AMI_IOC_MAGIC, 1, struct ami_ioc_bar_data)
+#define AMI_IOC_WRITE_BAR           _IOW(AMI_IOC_MAGIC, 2, struct ami_ioc_bar_data)
+#define AMI_IOC_GET_SENSOR_VALUE    _IOWR(AMI_IOC_MAGIC, 3, struct ami_ioc_sensor_value)
+#define AMI_IOC_DEVICE_BOOT         _IOW(AMI_IOC_MAGIC, 4, struct ami_ioc_data_payload)
+#define AMI_IOC_COPY_PARTITION      _IOW(AMI_IOC_MAGIC, 5, struct ami_ioc_data_payload)
+#define AMI_IOC_SET_SENSOR_REFRESH  _IOW(AMI_IOC_MAGIC, 6, uint16_t)
+#define AMI_IOC_GET_FPT_HDR         _IOR(AMI_IOC_MAGIC, 7, struct ami_ioc_fpt_hdr_value)
+#define AMI_IOC_GET_FPT_PARTITION   _IOWR(AMI_IOC_MAGIC, 8, struct ami_ioc_fpt_partition_value)
+#define AMI_IOC_READ_EEPROM         _IOWR(AMI_IOC_MAGIC, 9, struct ami_ioc_eeprom_payload)
+#define AMI_IOC_WRITE_EEPROM        _IOW(AMI_IOC_MAGIC, 10, struct ami_ioc_eeprom_payload)
+#define AMI_IOC_APP_SETUP           _IOW(AMI_IOC_MAGIC, 11, enum ami_ioc_app_setup)
+#define AMI_IOC_READ_MODULE         _IOW(AMI_IOC_MAGIC, 12, struct ami_ioc_module_payload)
+#define AMI_IOC_WRITE_MODULE        _IOW(AMI_IOC_MAGIC, 13, struct ami_ioc_module_payload)
+#define AMI_IOC_DEBUG_VERBOSITY     _IOW(AMI_IOC_MAGIC, 14, uint8_t)
+#define AMI_IOC_PEEK                _IOW(AMI_IOC_MAGIC, 15, struct ami_ioc_peek_poke_payload)
+#define AMI_IOC_POKE                _IOW(AMI_IOC_MAGIC, 16, struct ami_ioc_peek_poke_payload)
+#define AMI_IOC_MAX                 (17)
 
 
 #endif  /* AMI_IOCTL_H */

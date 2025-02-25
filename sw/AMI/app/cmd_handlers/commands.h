@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * commands.h - This file contains all supported command handlers
- * 
+ *
  * Copyright (c) 2023-present Advanced Micro Devices, Inc. All rights reserved.
  */
 
@@ -68,5 +68,11 @@ extern struct app_cmd cmd_module_byte_wr;
 
 /* "debug_verbosity" handler */
 extern struct app_cmd cmd_debug_verbosity;
+
+/* "peek" handler */
+extern struct app_cmd cmd_peek;
+
+/* "poke" handler */
+extern struct app_cmd cmd_poke;
 
 #endif

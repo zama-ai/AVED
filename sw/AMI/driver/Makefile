@@ -3,6 +3,8 @@
 
 TARGET_MODULE:=ami
 
+#define VERBOSE_DEBUG 1
+
 obj-m += $(TARGET_MODULE).o
 
 $(TARGET_MODULE)-objs += ami_top.o
@@ -20,6 +22,8 @@ $(TARGET_MODULE)-objs += ami_eeprom.o
 $(TARGET_MODULE)-objs += ami_module.o
 $(TARGET_MODULE)-objs += amc_proxy.o
 $(TARGET_MODULE)-objs += ami_log.o
+$(TARGET_MODULE)-objs += ami_peekpoke.o
+$(TARGET_MODULE)-objs += ami_iop_push.o
 $(TARGET_MODULE)-objs += fal/gcq/fw_if_gcq_linux.o
 $(TARGET_MODULE)-objs += gcq-driver/src/gcq_driver.o
 $(TARGET_MODULE)-objs += gcq-driver/src/gcq_hw.o
