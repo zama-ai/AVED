@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * ami_iop_push.c - This file contains function to push HPU instructions to the HPU
+ *
+ */
+
 #include <linux/types.h>
 #include <linux/delay.h>
 #include <linux/pci.h>
