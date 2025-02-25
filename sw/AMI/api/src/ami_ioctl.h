@@ -167,7 +167,7 @@ struct ami_ioc_fpt_partition_value {
  * @offset: Offset from the EEPROM base address.
  */
 struct ami_ioc_eeprom_payload {
-        unsigned long  addr;
+    unsigned long  addr;
     uint8_t        len;
     uint8_t        offset;
 };
