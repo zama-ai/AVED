@@ -27,8 +27,8 @@
 
 /* IOCTL data. Shared with userspace code. */
 
-#define AMI_IOC_FPT_UPDATE_MAGIC    (0xAAAAAAAA)
-#define AMI_IOC_SENSOR_STATUS_LEN    (40)
+#define AMI_IOC_FPT_UPDATE_MAGIC  (0xAAAAAAAA)
+#define AMI_IOC_SENSOR_STATUS_LEN (40)
 
 /**
  * struct ami_ioc_data_payload - payload struct for dynamically sized ioctl data
