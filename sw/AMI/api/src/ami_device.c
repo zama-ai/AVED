@@ -410,7 +410,7 @@ int ami_dev_find_next(ami_device **dev, int b, int d, int f, ami_device *prev)
 
     /* Check driver version */
     if (ami_get_driver_version(&driver_ver) != AMI_STATUS_ERROR) {
-        if ((GIT_TAG_VER_MAJOR != driver_ver.major) || (GIT_TAG_VER_MINOR != driver_ver.minor))
+        if ((GIT_TAG_VER_MAJOR != driver_ver.major))
             return AMI_API_ERROR(AMI_ERROR_EVER);
     } else {
         return AMI_STATUS_ERROR;

@@ -754,7 +754,7 @@ static int check_amc_supported_version(struct amc_control_ctxt    *amc_ctrl_ctxt
     if (!amc_ctrl_ctxt)
         return -EINVAL;
 
-    if ((GIT_TAG_VER_MAJOR == major) && (GIT_TAG_VER_MINOR == minor)) {
+    if ((GIT_TAG_VER_MAJOR == major)) {
         AMI_INFO(amc_ctrl_ctxt, "AMC Supported Version : %d.%d", major, minor);
         return SUCCESS;
     }

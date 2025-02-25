@@ -5,7 +5,7 @@
 #ifndef _AMI_VERSION_H_
 #define _AMI_VERSION_H_
 
-#define GIT_TAG                   "2.2.0"
+#define GIT_TAG                   "2.3.0"
 #define GIT_TAG_VER_MAJOR         (2)
 #define GIT_TAG_VER_MINOR         (2)
 #define GIT_TAG_VER_PATCH         (0)
