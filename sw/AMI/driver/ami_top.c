@@ -1111,9 +1111,9 @@ void __exit vmc_exit(void)
     pci_unregister_driver(&pcie_driver_core);
     unregister_driver_kernel();
 
-        /* remove proc entry */
-        remove_proc_entry(PROC_ENTRY_FILENAME, NULL);
-        PR_DBG("/proc/%s removed\n", PROC_ENTRY_FILENAME);
+    /* remove proc entry */
+    remove_proc_entry(PROC_ENTRY_FILENAME, NULL);
+    PR_DBG("/proc/%s removed\n", PROC_ENTRY_FILENAME);
 
     PR_INFO("Successfully removed driver");
 }
