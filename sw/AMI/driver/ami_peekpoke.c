@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * ami_peekpoke.c - This file contains functions to read & write HPU registers
+ *
+ */
+
 #include <linux/types.h>
 #include <linux/delay.h>
 #include <linux/pci.h> 
