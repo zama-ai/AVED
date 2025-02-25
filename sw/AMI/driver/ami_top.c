@@ -1042,9 +1042,9 @@ int __init vmc_entry(void)
 
     PR_DBG("Loading driver to the kernel");
 
-        ret = register_proc_file();
-        if (ret)
-                goto fail;
+    ret = register_proc_file();
+    if (ret)
+            goto fail;
 
     /* Register the device driver with the kernel */
     ret = register_driver_kernel();
