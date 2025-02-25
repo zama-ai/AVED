@@ -278,6 +278,6 @@ long dev_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
  * Return: 0 or negative error code
  */
 int create_cdev(unsigned baseminor, struct drv_cdev_struct *drv_cdev,
-    struct device *parent, const struct file_operations *fops);
+                struct device *parent, const struct file_operations *fops);
 
 #endif /* AMI_CDEV_H */
