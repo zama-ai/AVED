@@ -2,7 +2,6 @@
 /*
  * cmd_poke.c - This file contains the implementation for the command "poke"
  *
- * Copyright (c) 2023-present Advanced Micro Devices, Inc. All rights reserved.
  */
 
 /*****************************************************************************/
