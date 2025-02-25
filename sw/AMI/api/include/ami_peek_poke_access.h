@@ -2,7 +2,6 @@
 /*
  * ami_peek_poke_access.h - This file contains the HPU registers access interface.
  * 
- * Copyright (c) 2023-present Advanced Micro Devices, Inc. All rights reserved.
  */
 
 #ifndef AMI_PEEK_POKE_ACCESS_H
