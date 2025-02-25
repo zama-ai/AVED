@@ -18,12 +18,12 @@
 
 #include "ami.h"
 
-#define DEFAULT_CDEV_COUNT  1
-#define DEV_NAME_SIZE       50
-#define CLS_STR_SIZE        30
-#define DEFAULT_CLS_NAME    KBUILD_MODNAME
+#define DEFAULT_CDEV_COUNT     1
+#define DEV_NAME_SIZE          50
+#define CLS_STR_SIZE           30
+#define DEFAULT_CLS_NAME       KBUILD_MODNAME
 #define DEFAULT_DEVICE_NAME    KBUILD_MODNAME
-#define DEFAULT_CDEV_BASEMINOR    (unsigned)(0)
+#define DEFAULT_CDEV_BASEMINOR (unsigned)(0)
 
 /* IOCTL data. Shared with userspace code. */
 
