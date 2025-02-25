@@ -761,7 +761,7 @@ void stop_gcq_services(struct amc_control_ctxt *amc_ctrl_ctxt);
  * Return: 0 or negative error code.
  */
 int setup_amc(struct pci_dev *dev, struct amc_control_ctxt **amc_ctrl_ctxt, endpoint_info_struct ep_gcq,
-          endpoint_info_struct ep_gcq_payload, amc_event_callback event_cb, void *event_cb_data);
+              endpoint_info_struct ep_gcq_payload, amc_event_callback event_cb, void *event_cb_data);
 
 /**
  * unset_amc() - Stop the service, close proxy and tidy up PCI
