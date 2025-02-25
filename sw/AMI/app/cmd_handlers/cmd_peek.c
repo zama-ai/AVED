@@ -3,7 +3,6 @@
 /*
  * cmd_peek.c - This file contains the implementation for the command "peek"
  *
- * Copyright (c) 2023-present Advanced Micro Devices, Inc. All rights reserved.
  */
 
 /*****************************************************************************/
