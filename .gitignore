@@ -5,6 +5,7 @@
 *.swo
 *.elf
 *.d
+*.cmd
 
 #includes specifics for perforce + any other non public
 output/
