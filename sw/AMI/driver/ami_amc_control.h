@@ -737,7 +737,7 @@ int get_rid(int repo_type);
  * Return: 0 or negative error code.
  */
 int submit_gcq_command(struct amc_control_ctxt *amc_ctrl_ctxt, enum gcq_submit_cmd_req cmd_req, uint32_t flags,
-               uint8_t *data_buf, uint32_t data_size);
+                       uint8_t *data_buf, uint32_t data_size);
 
 /**
  * stop_gcq_services() - stop the service running.
