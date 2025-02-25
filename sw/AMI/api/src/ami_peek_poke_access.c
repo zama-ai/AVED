@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * ami_peek_poke_access.c - This file contains functions to read/write HPU registers
+ * 
+ */
+
 /*****************************************************************************/
 /* Includes                                                                  */
 /*****************************************************************************/
