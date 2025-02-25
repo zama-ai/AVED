@@ -86,7 +86,6 @@ static const char help_msg[] = \
     "\tdebug_verbosity    Set the AMC debug level\r\n"
     "\tpeek               peek pl register\r\n"
     "\tpoke               poke pl register\r\n"
-    "\tiop_push           Push Iop into ISC with axi stream\r\n"
 ;
 
 /*
@@ -156,7 +155,6 @@ static const struct app_cmd_map commands[] = {
     { "debug_verbosity", &cmd_debug_verbosity },
     { "peek",            &cmd_peek            },
     { "poke",            &cmd_poke            },
-    { "iop_push",        &cmd_iop_push        },
 };
 
 /*****************************************************************************/

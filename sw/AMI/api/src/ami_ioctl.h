@@ -178,13 +178,6 @@ struct ami_ioc_peek_poke_payload {
     uint32_t offset;
 };
 
-struct ami_ioc_iop_push_payload {
-    unsigned long  addr;
-    uint32_t len;
-    uint32_t offset;
-    bool     type;
-};
-
 /**
  * struct ami_ioc_module_payload - payload struct for dynamically sized ioctl qsfp data
  * @addr: Location of data buffer in userspace memory.
@@ -229,8 +222,7 @@ enum ami_ioc_app_setup {
 #define AMI_IOC_DEBUG_VERBOSITY     _IOW(AMI_IOC_MAGIC, 14, uint8_t)
 #define AMI_IOC_PEEK                _IOW(AMI_IOC_MAGIC, 15, struct ami_ioc_peek_poke_payload)
 #define AMI_IOC_POKE                _IOW(AMI_IOC_MAGIC, 16, struct ami_ioc_peek_poke_payload)
-#define AMI_IOC_IOP_PUSH            _IOW(AMI_IOC_MAGIC, 17, struct ami_ioc_iop_push_payload)
-#define AMI_IOC_MAX                 (19)
+#define AMI_IOC_MAX                 (17)
 
 
 #endif  /* AMI_IOCTL_H */

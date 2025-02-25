@@ -75,6 +75,4 @@ extern struct app_cmd cmd_peek;
 /* "poke" handler */
 extern struct app_cmd cmd_poke;
 
-extern struct app_cmd cmd_iop_push;
-
 #endif
