@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * ami_iop_push.h - This file contains prototype of function to push HPU instructions to the HPU
+ *
+ */
+
 #ifndef AMI_IOP_PUSH_H
 #define AMI_IOP_PUSH_H
 
