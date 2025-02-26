@@ -21,8 +21,6 @@
 /*****************************************************************************/
 #define AMC_PROXY_REQUEST_SIZE          (512)
 #define AMC_PROXY_RESPONSE_SIZE         (16)
-#define AMC_TRIGGERED_COMMAND_ID        (0xF00D)
-
 
 /*****************************************************************************/
 /* Typedefs                                                                  */
@@ -33,11 +31,10 @@
  * @proxy_id: the associated proxy id.
  * @event_id: the event that cause the callback to be invoked.
  * @arg: void ptr containing the proxy command used to raise request.
- * @ctxt: void ptr containing the amc control context ptr.
  *
  * Return: errno or success code.
  */
-typedef int (amc_proxy_event_callback)(uint8_t proxy_id, uint8_t event_id, void* arg, void* ctxt);
+typedef int (amc_proxy_event_callback)(uint8_t proxy_id, uint8_t event_id, void* arg);
 
 
 /*****************************************************************************/
@@ -206,14 +203,6 @@ struct amc_proxy_ami_peek_poke {
     uint64_t address;
     uint32_t length;
     uint32_t offset;
-};
-
-struct amc_proxy_ami_iop_push {
-    enum amc_proxy_cmd_rw_request type;
-    uint64_t address;
-    uint32_t length;
-    uint32_t offset;
-    bool     dop;
 };
 
 /**
@@ -423,11 +412,16 @@ int amc_proxy_request_partition_copy(struct amc_proxy_cmd_struct *cmd,
 int amc_proxy_request_heartbeat(struct amc_proxy_cmd_struct *cmd,
                                 struct amc_proxy_hearbeat_request *heartbeat);
 
+/**
+ * amc_proxy_request_peek_poke() - peek/poke request
+ *
+ * @cmd: the proxy command structure
+ * @peek_poke: a structure populated with the peek/poke request
+ *
+ * Return: The errno return code
+ */
 int amc_proxy_request_peek_poke(struct amc_proxy_cmd_struct *cmd,
                                 struct amc_proxy_ami_peek_poke *peek_poke);
-
-int amc_proxy_request_iop_push(struct amc_proxy_cmd_struct *cmd,
-                               struct amc_proxy_ami_iop_push *iop_push);
 
 /**
  * amc_proxy_request_eeprom_read_write() - eeprom read/write request
@@ -535,9 +529,14 @@ int amc_proxy_get_response_heartbeat(struct amc_proxy_cmd_struct *cmd,
  */
 int amc_proxy_get_response_eeprom_read_write(struct amc_proxy_cmd_struct *cmd);
 
+/**
+ * amc_proxy_get_response_peek_poke() - retrieve the peek/poke response
+ *
+ * @cmd: the proxy command structure
+ *
+ * Return: The errno return code
+ */
 int amc_proxy_get_response_peek_poke(struct amc_proxy_cmd_struct *cmd);
-
-int amc_proxy_get_response_iop_push(struct amc_proxy_cmd_struct *cmd);
 
 /**
  * amc_proxy_get_response_module_read_write() - retrieve the module read/write response

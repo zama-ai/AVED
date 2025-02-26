@@ -17,15 +17,9 @@
 #include "ami_program.h"
 #include "ami_eeprom.h"
 #include "ami_peekpoke.h"
-#include "ami_iop_push.h"
 #include "ami_log.h"
 #include "ami_module.h"
 #include "ami_driver_version.h"
-
-extern uint32_t *global_iop_ack_table;
-extern uint32_t global_iop_ack_table_size;
-extern atomic_t iop_ack_cnt_atomic;
-extern wait_queue_head_t wait_iop_q;
 
 /*****************************************************************************/
 /* Local Varaiables                                                          */
@@ -453,10 +447,9 @@ static int remove_gcq_cid(struct amc_control_ctxt *amc_ctrl_ctxt, uint16_t id)
  *
  * Return: errno or success code.
  */
-static int amc_proxy_callback(uint8_t proxy_id, uint8_t event_id, void*arg, void*ctxt)
+static int amc_proxy_callback(uint8_t proxy_id, uint8_t event_id, void*arg)
 {
     struct amc_proxy_cmd_struct *amc_proxy_cmd = NULL;
-    struct amc_control_ctxt *amc_ctrl_ctxt = NULL;
     struct completion *req_complete = NULL;
     int ret = 0;
 
@@ -464,10 +457,6 @@ static int amc_proxy_callback(uint8_t proxy_id, uint8_t event_id, void*arg, void
         return -EINVAL;
 
     amc_proxy_cmd = (struct amc_proxy_cmd_struct*)arg;
-
-    // ctxt is only useful for AMC_PROXY_EVENT_TRIGGERED_BY_AMC
-    if (ctxt != NULL)
-        amc_ctrl_ctxt = (struct amc_control_ctxt*)ctxt;
 
     if (amc_proxy_cmd->cmd_opcode == AMC_CMD_ID_HEARTBEAT)
         req_complete = &amc_proxy_cmd->cmd_complete_heartbeat;
@@ -484,35 +473,6 @@ static int amc_proxy_callback(uint8_t proxy_id, uint8_t event_id, void*arg, void
             /* Signal condvar to unblock & fetch the failed response */
             complete(req_complete);
             amc_proxy_cmd->timed_out = true;
-            break;
-
-        case AMC_PROXY_EVENT_TRIGGERED_BY_AMC:
-            PR_INFO("Got cmd from AMC with payload %llx atomic %d", amc_proxy_cmd->cmd_response, atomic_read(&iop_ack_cnt_atomic));
-            if (amc_ctrl_ctxt != NULL) {
-                int i = 0;
-                // number of IOP ack is an offset on the command id
-                uint32_t iopAckNb = amc_proxy_cmd->cmd_cid - AMC_TRIGGERED_COMMAND_ID;
-                uint32_t* iopAck;
-                iopAck = kzalloc(iopAckNb * sizeof(uint32_t), GFP_KERNEL);
-                global_iop_ack_table = iopAck;
-                global_iop_ack_table_size = iopAckNb;
-                PR_INFO("Reading %d words @ offset %x", iopAckNb, AMC_DATA_ADDR_OFF2);
-                memcpy_gcq_payload_from_device(amc_ctrl_ctxt, AMC_DATA_ADDR_OFF2, iopAck, iopAckNb * sizeof(uint32_t));
-                for (i = 0; i < iopAckNb; i++) {
-                    PR_INFO("iopAck[%d] = %x", i, iopAck[i]);
-                }
-                atomic_add(iopAckNb, &iop_ack_cnt_atomic);
-                PR_INFO("Just add %d to iop_ack_cnt_atomic to %d", iopAckNb, atomic_read(&iop_ack_cnt_atomic));
-                // acknowledge that data have been read (even if it has not been)
-                iowrite32(0xDEADF00D, amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_DATA_ADDR_OFF2);
-                // signaling ami_top that waiting reader can be woken
-                wake_up(&wait_iop_q);
-
-                kfree(iopAck);
-            } else {
-                PR_INFO("Got cmd from AMC but no amc_control_ctxt");
-            }
-            kfree(amc_proxy_cmd);
             break;
 
         default:
@@ -831,10 +791,6 @@ static enum amc_cmd_id get_cmd_command_id(enum gcq_submit_cmd_req cmd_req)
 
     case GCQ_SUBMIT_CMD_PEEKPOKE:
         id = AMC_CMD_ID_PEEKPOKE;
-        break;
-
-    case GCQ_SUBMIT_CMD_IOP_PUSH:
-        id = AMC_CMD_ID_IOP_PUSH;
         break;
 
     case GCQ_SUBMIT_CMD_MODULE_READ_WRITE:
@@ -1277,7 +1233,6 @@ int submit_gcq_command(struct amc_control_ctxt    *amc_ctrl_ctxt,
     case AMC_CMD_ID_HEARTBEAT:
     case AMC_CMD_ID_EEPROM_READ_WRITE:
     case AMC_CMD_ID_PEEKPOKE:
-    case AMC_CMD_ID_IOP_PUSH:
     case AMC_CMD_ID_MODULE_READ_WRITE:
         if (!data_buf) {
             ret = -EINVAL;
@@ -1432,7 +1387,6 @@ int submit_gcq_command(struct amc_control_ctxt    *amc_ctrl_ctxt,
     case AMC_CMD_ID_EEPROM_READ_WRITE:
     case AMC_CMD_ID_MODULE_READ_WRITE:
     case AMC_CMD_ID_PEEKPOKE:
-    case AMC_CMD_ID_IOP_PUSH:
     {
         int req_type = MAX_AMC_PROXY_CMD_RW_REQUEST;
 
@@ -1464,9 +1418,6 @@ int submit_gcq_command(struct amc_control_ctxt    *amc_ctrl_ctxt,
 
         case AMC_CMD_ID_PEEKPOKE:
             req_type = PEEKPOKE_GET_TYPE(flags);
-            break;
-        case AMC_CMD_ID_IOP_PUSH:
-            req_type = IOP_PUSH_GET_TYPE(flags);
             break;
 
         case AMC_CMD_ID_MODULE_READ_WRITE:
@@ -1601,20 +1552,6 @@ int submit_gcq_command(struct amc_control_ctxt    *amc_ctrl_ctxt,
         peek_poke_req.offset  = PEEKPOKE_GET_OFFSET(flags);
 
         ret = amc_proxy_request_peek_poke(amc_proxy_cmd, &peek_poke_req);
-        break;
-    }
-
-    case AMC_CMD_ID_IOP_PUSH:
-    {
-        struct amc_proxy_ami_iop_push iop_push_req = { 0 };
-
-        iop_push_req.address = payload_address;
-        iop_push_req.length  = payload_size;
-        iop_push_req.type    = IOP_PUSH_GET_TYPE(flags);
-        iop_push_req.offset  = IOP_PUSH_GET_OFFSET(flags);
-        iop_push_req.dop     = IOP_PUSH_GET_DOP(flags);
-
-        ret = amc_proxy_request_iop_push(amc_proxy_cmd, &iop_push_req);
         break;
     }
 
@@ -1759,15 +1696,6 @@ int submit_gcq_command(struct amc_control_ctxt    *amc_ctrl_ctxt,
                 memcpy_gcq_payload_from_device(amc_ctrl_ctxt, payload_address, data_buf, data_size);
             }
         }
-        break;
-    }
-
-    case AMC_CMD_ID_IOP_PUSH:
-    {
-        ret = amc_proxy_get_response_iop_push(amc_proxy_cmd);
-        if (!ret)
-            if (IOP_PUSH_GET_TYPE(flags) == AMC_PROXY_CMD_RW_REQUEST_READ)
-                memcpy_gcq_payload_from_device(amc_ctrl_ctxt, payload_address, data_buf, data_size);
         break;
     }
 

@@ -174,7 +174,6 @@ enum gcq_submit_cmd_req {
     GCQ_SUBMIT_CMD_MODULE_READ_WRITE            = 0x90,
     GCQ_SUBMIT_CMD_DEBUG_VERBOSITY              = 0x91,
     GCQ_SUBMIT_CMD_PEEKPOKE                     = 0xDEC,
-    GCQ_SUBMIT_CMD_IOP_PUSH                     = 0xCAB,
 };
 
 /**
@@ -376,7 +375,6 @@ enum amc_cmd_id {
     AMC_CMD_ID_MODULE_READ_WRITE,
     AMC_CMD_ID_DEBUG_VERBOSITY,
     AMC_CMD_ID_PEEKPOKE,
-    AMC_CMD_ID_IOP_PUSH,
 
     AMC_CMD_ID_MAX
 };
