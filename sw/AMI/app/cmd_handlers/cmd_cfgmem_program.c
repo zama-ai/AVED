@@ -230,11 +230,11 @@ static int do_cmd_cfgmem_program(struct app_option *options, int num_args, char 
             char command[255];
 
             // using sudo, we cannot access user variables, we are in root
-            printf("[INFO]: vivado_path  %s \n", vivado_path);
-            printf("[INFO]: tool_version %s \n\n", tool_version);
+            printf("[INFO]: XILINX_VIVADO_PATH = %s \n", vivado_path);
+            printf("[INFO]: XILINX_TOOL_VERSION = %s \n\n", tool_version);
 
             if (!vivado_path || !tool_version) {
-                fprintf(stderr, "Required environment variables not set: you must launch this command with -E !\n");
+                fprintf(stderr, "Required environment variables not set: if using sudo you may want to add -E to keep user env !\n");
                 exit(EXIT_FAILURE);
             }
 
