@@ -1368,8 +1368,6 @@ int amc_proxy_request_peek_poke(struct amc_proxy_cmd_struct *cmd, struct amc_pro
     int ret = -EPERM;
     struct amc_proxy_list_entry *amc_ctxt = NULL;
 
-    printk("amc_proxy_request_peek_poke");
-
     if (!cmd)
         return -EINVAL;
 
