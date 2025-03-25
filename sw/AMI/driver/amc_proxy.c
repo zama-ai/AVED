@@ -517,37 +517,6 @@ LIST_HEAD(amc_proxy_list_head);
 /*****************************************************************************/
 
 /**
- * memcpy_iopack_payload_from_device() - copy iop ack from shared memory.
- * @amc_ctrl_ctxt: AMC data struct instance.
- * @offset: the offset.
- * @dst: the destination address.
- * @len: the length.
- *
- * Return: None.
- */
-static void memcpy_iopack_payload_from_device(struct amc_control_ctxt *amc_ctrl_ctxt,
-        uint32_t offset,
-        void     *dst,
-        size_t   len)
-{
-    uint32_t max_addr = 0;
-
-    if (!amc_ctrl_ctxt || !dst)
-        return;
-
-    max_addr =  amc_ctrl_ctxt->amc_shared_mem.data.amc_data_end -
-                amc_ctrl_ctxt->amc_shared_mem.data.amc_data_start + 1;
-    if ((offset + len) > max_addr) {
-        AMI_ERR(amc_ctrl_ctxt, "Shared memory read access outside of range");
-        return;
-    }
-
-    memcpy_fromio(dst,
-              (void __iomem *)(amc_ctrl_ctxt->gcq_payload_base_virt_addr + offset),
-              len);
-}
-
-/**
  * amc_result_to_linux_errno() - map an AMC return code to a Linux errno
  * @res: Return code received from AMC over GCQ.
  *
@@ -791,10 +760,9 @@ static int complete_response_thread(void *data)
         uint32_t ccmd_size = sizeof(struct com_queue_entry);
         struct amc_proxy_instance *amc_proxy_inst = NULL;
         bool response_failed = false;
-        uint32_t ackq_tail = 0;
-        uint32_t ackq_last_tail = 0;
-        uint32_t ackq_pending_words = 0;
         uint32_t ackq_head = 0;
+        uint32_t ackq_tail = 0;
+        uint32_t ackq_used_words = 0;
         int i = 0;
         uint32_t* iopAck = NULL;
 
@@ -804,8 +772,6 @@ static int complete_response_thread(void *data)
         } else {
                 amc_proxy_inst = (struct amc_proxy_instance *)data;
         }
-
-        ackq_last_tail = ioread32(amc_proxy_inst->amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOPACK_ADDR_TAIL);
 
         while(1) {
 
@@ -827,47 +793,46 @@ static int complete_response_thread(void *data)
                 }
 
 
-                ackq_tail = ioread32(amc_proxy_inst->amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOPACK_ADDR_TAIL);
+                // Retrieve Hpu IopAck if any
                 ackq_head = ioread32(amc_proxy_inst->amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOPACK_ADDR_HEAD);
-                if (ackq_tail != ackq_last_tail || ackq_pending_words > 0) {
-                    ackq_pending_words = (ackq_tail >= ackq_head) ? (ackq_tail - ackq_head) : (AMC_IOPACK_MAX_WORDS - (ackq_head - ackq_tail));
-                    ackq_last_tail = ackq_tail;
-                    PR_INFO("ackq tail has moved: tail 0x%x, head 0x%x (or pending %d)", ackq_tail, ackq_head, ackq_pending_words);
+                ackq_tail = ioread32(amc_proxy_inst->amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOPACK_ADDR_TAIL);
+                ackq_used_words = ackq_head - ackq_tail;
 
-                    // number of IOP ack is an offset on the command id
-                    iopAck = kzalloc(ackq_pending_words * sizeof(uint32_t), GFP_KERNEL);
-                    global_iop_ack_table = iopAck;
-                    global_iop_ack_table_size = ackq_pending_words;
+                if (ackq_used_words > 0) {
+                        PR_DBG("Ack queue: head 0x%x tail 0x%x -> {used %d}", ackq_head, ackq_tail, ackq_used_words);
+                        // Allocate Ackq Buffer
+                        iopAck = kzalloc(ackq_used_words * sizeof(uint32_t), GFP_KERNEL);
+                        global_iop_ack_table = iopAck;
+                        global_iop_ack_table_size = ackq_used_words;
 
-                    if (ackq_head + ackq_pending_words >= AMC_IOPACK_MAX_WORDS) {
-                        PR_INFO("Reading %d words @ offset %x - not finished",
-                                AMC_IOPACK_MAX_WORDS - ackq_head,
-                                (uint32_t)(AMC_IOPACK_ADDR_DATA_START + (ackq_head * sizeof(uint32_t))) );
-                        memcpy_iopack_payload_from_device(amc_proxy_inst->amc_ctrl_ctxt, AMC_IOPACK_ADDR_DATA_START +
-                                (ackq_head * sizeof(uint32_t)), iopAck, (AMC_IOPACK_MAX_WORDS - ackq_head) * sizeof(uint32_t));
-                        ackq_pending_words -= (AMC_IOPACK_MAX_WORDS - ackq_head);
-                        iopAck += (AMC_IOPACK_MAX_WORDS - ackq_head);
-                        ackq_head = 0;
-                    }
-                    PR_INFO("Reading %d words @ offset %x", ackq_pending_words,
-                                (uint32_t)(AMC_IOPACK_ADDR_DATA_START + (ackq_head * sizeof(uint32_t))));
-                    if (ackq_pending_words > 0) {
-                        memcpy_iopack_payload_from_device(amc_proxy_inst->amc_ctrl_ctxt, AMC_IOPACK_ADDR_DATA_START +
-                                (ackq_head * sizeof(uint32_t)), iopAck, ackq_pending_words * sizeof(uint32_t));
-                    }
-                    ackq_head += ackq_pending_words;
-                    ackq_pending_words = 0;
-                    for (i = 0; i < global_iop_ack_table_size; i++) {
-                        PR_INFO("iopAck[%d] = %x", i, global_iop_ack_table[i]);
-                    }
-                    atomic_add(global_iop_ack_table_size, &iop_ack_cnt_atomic);
-                    PR_INFO("Just add %d to iop_ack_cnt_atomic to %d", global_iop_ack_table_size, atomic_read(&iop_ack_cnt_atomic));
-                    // acknowledge that data have been read (even if it has not been)
-                    iowrite32(ackq_head, amc_proxy_inst->amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOPACK_ADDR_HEAD);
-                    // signaling ami_top that waiting reader can be woken
-                    wake_up(&wait_iop_q);
+                        // 2. Compute chunks index and size
+                        uint32_t chunk_idx = ackq_tail % AMC_IOPACK_MAX_WORDS;
+                        uint32_t chunk_size = ((AMC_IOPACK_MAX_WORDS-chunk_idx) < ackq_used_words)? (AMC_IOPACK_MAX_WORDS- chunk_idx): ackq_used_words;
+                        uint32_t wrap_chunk_size = ackq_used_words - chunk_size;
 
-                    kfree(iopAck);
+                        // 3. Read Data from the queue
+                        if (chunk_size > 0) {
+                            memcpy_fromio(iopAck,
+                                      (void __iomem *)(amc_proxy_inst->amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOPACK_ADDR_DATA_START + chunk_idx*sizeof(uint32_t)),
+                                      chunk_size * sizeof(uint32_t));
+                        }
+                        if (wrap_chunk_size > 0) {
+                            memcpy_fromio(iopAck,
+                                      (void __iomem *)(amc_proxy_inst->amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOPACK_ADDR_DATA_START),
+                                      wrap_chunk_size * sizeof(uint32_t));
+                        }
+                        for (i = 0; i < global_iop_ack_table_size; i++) {
+                            PR_DBG("iopAck[%d] = 0x%x", i, global_iop_ack_table[i]);
+                        }
+                        atomic_add(global_iop_ack_table_size, &iop_ack_cnt_atomic);
+                        PR_DBG("Add %d to iop_ack_cnt_atomic to %d", global_iop_ack_table_size, atomic_read(&iop_ack_cnt_atomic));
+
+                        // Acknowledge queue consumption
+                        ackq_tail += ackq_used_words;
+                        iowrite32(ackq_tail, amc_proxy_inst->amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOPACK_ADDR_TAIL);
+                        // signaling ami_top that waiting reader can be woken
+                        wake_up(&wait_iop_q);
+                        kfree(iopAck);
                 }
 
                 /* Check if a stop has been requested */
