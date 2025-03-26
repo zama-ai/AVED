@@ -103,14 +103,14 @@ enum xil_table_type {
 };
 
 typedef struct {
-	endpoint_info_struct hw_discovery;       
-	endpoint_info_struct uuid0_rom;          
-	endpoint_info_struct interpf_mailbox;    
-	endpoint_info_struct gcq;                
-	endpoint_info_struct gcq_payload;        
+	endpoint_info_struct hw_discovery;
+	endpoint_info_struct uuid0_rom;
+	endpoint_info_struct interpf_mailbox;
+	endpoint_info_struct gcq;
+	endpoint_info_struct gcq_payload;
 
-	uint32_t logic_uuid      [XILINX_LOGIC_UUID_SIZE_BYTES/sizeof(uint32_t)];   
-	char     logic_uuid_str  [XILINX_LOGIC_UUID_SIZE_BYTES*2+1];                
+	uint32_t logic_uuid      [XILINX_LOGIC_UUID_SIZE_BYTES/sizeof(uint32_t)];
+	char     logic_uuid_str  [XILINX_LOGIC_UUID_SIZE_BYTES*2+1];
 } endpoints_struct;
 
 int read_logic_uuid(struct pci_dev *dev, endpoints_struct **endpoints);
