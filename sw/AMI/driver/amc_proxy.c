@@ -765,6 +765,9 @@ static int complete_response_thread(void *data)
         uint32_t ackq_used_words = 0;
         int i = 0;
         uint32_t* iopAck = NULL;
+        uint32_t chunk_idx;
+        uint32_t chunk_size;
+        uint32_t wrap_chunk_size;
 
         if (!data) {
                 PR_ERR("Response thread null data arg");
@@ -806,9 +809,9 @@ static int complete_response_thread(void *data)
                         global_iop_ack_table_size = ackq_used_words;
 
                         // 2. Compute chunks index and size
-                        uint32_t chunk_idx = ackq_tail % AMC_IOPACK_MAX_WORDS;
-                        uint32_t chunk_size = ((AMC_IOPACK_MAX_WORDS-chunk_idx) < ackq_used_words)? (AMC_IOPACK_MAX_WORDS- chunk_idx): ackq_used_words;
-                        uint32_t wrap_chunk_size = ackq_used_words - chunk_size;
+                        chunk_idx = ackq_tail % AMC_IOPACK_MAX_WORDS;
+                        chunk_size = ((AMC_IOPACK_MAX_WORDS-chunk_idx) < ackq_used_words)? (AMC_IOPACK_MAX_WORDS- chunk_idx): ackq_used_words;
+                        wrap_chunk_size = ackq_used_words - chunk_size;
 
                         // 3. Read Data from the queue
                         if (chunk_size > 0) {

@@ -333,7 +333,6 @@ static int create_pf_dev_data(struct pci_dev *dev)
     int ret = SUCCESS;
     int empty_sdr_count = 0;
     struct pf_dev_struct *pf_dev = NULL;
-        uint32_t iopq_head, iopq_tail;
 
     if (!dev)
         return -EINVAL;
