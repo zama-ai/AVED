@@ -18,9 +18,10 @@ int iop_push(struct amc_control_ctxt *amc_ctrl_ctxt, uint8_t *buf, uint8_t buf_l
     uint32_t iopq_head = 0;
     uint32_t iopq_tail = 0;
     uint32_t iopq_used_bytes = 0;
-    uint32_t iop_chunk = 0;
-    uint32_t iopq_check_tail = 0;
-    uint32_t new_tail = 0;
+    uint32_t iopq_free_bytes = 0;
+    uint32_t chunk_idx = 0;
+    uint32_t chunk_size = 0;
+    uint32_t wrap_chunk_size = 0;
 
     if (!amc_ctrl_ctxt || !buf || (buf_len == 0))
         return -EINVAL;
@@ -34,58 +35,45 @@ int iop_push(struct amc_control_ctxt *amc_ctrl_ctxt, uint8_t *buf, uint8_t buf_l
                   AMC_IOP_ADDR_HEAD);
     iopq_tail = ioread32(amc_ctrl_ctxt->gcq_payload_base_virt_addr +
                   AMC_IOP_ADDR_TAIL);
-    iopq_used_bytes = (iopq_tail >= iopq_head) ? (iopq_tail - iopq_head) : (AMC_IOP_MAX_BYTES - (iopq_head - iopq_tail));
-    PR_INFO("IOp queue: head 0x%x tail 0x%x used %d", iopq_head, iopq_tail, iopq_used_bytes);
+    iopq_used_bytes = iopq_head -iopq_tail;
+    iopq_free_bytes = AMC_IOP_MAX_BYTES + iopq_tail - iopq_head;
 
-    if (iopq_used_bytes + buf_len > AMC_IOP_MAX_BYTES) {
-        PR_ERR("IOp queue: cannot write IOp in queue %d > %d available bytes", buf_len, AMC_IOP_MAX_BYTES - iopq_used_bytes);
+    PR_DBG("IOp queue push 0x%x: head 0x%x tail 0x%x -> {used %d, free %d}", buf_len, iopq_head, iopq_tail, iopq_used_bytes, iopq_free_bytes);
+
+    if (iopq_free_bytes < buf_len) {
+        PR_ERR("IOp queue: cannot write IOp in queue %d > %d available bytes", buf_len, iopq_free_bytes);
         ret = FAILURE;
-    } else if ( (iopq_tail + buf_len) >= AMC_IOP_MAX_BYTES) {
-        iop_chunk = AMC_IOP_MAX_BYTES - iopq_tail;
-        if (iop_chunk > 0) {
+    } else {
+        // NB: Insertion could wrap on buffer boundaries:
+        // i.e could start at end of buffer and end at beginning, thus insertion will be always viewed as two chunks
+        // In general case, one of them will be empty
+
+        // Compute chunks index and size
+        chunk_idx = iopq_head % AMC_IOP_MAX_BYTES;
+        chunk_size = ((AMC_IOP_MAX_BYTES -chunk_idx) < buf_len) ? (AMC_IOP_MAX_BYTES -chunk_idx): buf_len;
+        wrap_chunk_size = buf_len - chunk_size;
+
+        // Copy data in memory
+        if (chunk_size > 0) {
             memcpy_toio(
-                (void __iomem *)(amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOP_ADDR_DATA_START + iopq_tail),
+                (void __iomem *)(amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOP_ADDR_DATA_START + chunk_idx),
                 buf,
-                iop_chunk);
+                chunk_size);
         }
-        buf += iop_chunk;
-        iop_chunk = buf_len - iop_chunk;
-        if (iop_chunk > 0) {
+        if (wrap_chunk_size > 0) {
             memcpy_toio(
                 (void __iomem *)(amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOP_ADDR_DATA_START),
-                buf,
-                iop_chunk);
+                (uint8_t*) (buf+chunk_size),
+                wrap_chunk_size);
         }
-        // memcpy_toio gave better result that simple iowrite32 (not sure why)
-        new_tail = iop_chunk;
-        memcpy_toio(
-            (void __iomem *)(amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOP_ADDR_TAIL),
-            &new_tail,
-            4);
-        iopq_check_tail = ioread32(amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOP_ADDR_TAIL);
-        PR_INFO("IOp queue: wrote 0x%x to tail and read 0x%x", iop_chunk, iopq_check_tail);
-        udelay(10);
-        if (new_tail != iopq_check_tail) {
-            ret = FAILURE;
-        }
-    } else {
-        memcpy_toio(
-            (void __iomem *)(amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOP_ADDR_DATA_START + iopq_tail),
-            buf,
-            buf_len);
 
-        // memcpy_toio gave better result that simple iowrite32 (not sure why)
-        new_tail = iopq_tail + buf_len;
+        // Update Queue pointers
+        iopq_head += buf_len;
+        // TODO understand why memcpy_toio gave better result than iowrite32
         memcpy_toio(
-            (void __iomem *)(amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOP_ADDR_TAIL),
-            &new_tail,
-            4);
-        iopq_check_tail = ioread32(amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOP_ADDR_TAIL);
-        PR_INFO("IOp queue: wrote 0x%x to tail and read 0x%x", iopq_tail + buf_len, iopq_check_tail);
-        udelay(10);
-        if (new_tail != iopq_check_tail) {
-            ret = FAILURE;
-        }
+            (void __iomem *)(amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOP_ADDR_HEAD),
+            &iopq_head,
+            sizeof(uint32_t));
     }
 
     if (ret)

@@ -333,7 +333,6 @@ static int create_pf_dev_data(struct pci_dev *dev)
     int ret = SUCCESS;
     int empty_sdr_count = 0;
     struct pf_dev_struct *pf_dev = NULL;
-        uint32_t iopq_head, iopq_tail;
 
     if (!dev)
         return -EINVAL;
@@ -404,15 +403,6 @@ static int create_pf_dev_data(struct pci_dev *dev)
     } else {
         if (pf_dev->amc_ctrl_ctxt->compat_mode)
             pf_dev->state = PF_DEV_STATE_COMPAT;
-                // reset IOP queue with AMC
-                // tbd as this is not working at all if RPU is also writing the head
-                // we may need an enable of the queue?
-                iopq_head = ioread32(pf_dev->amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOP_ADDR_HEAD);
-                iopq_tail = ioread32(pf_dev->amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOP_ADDR_TAIL);
-                if (iopq_head != iopq_tail) {
-                    DEV_INFO(dev, "iop queue tail(%d) & head(%d) were different so reset tail at head value", iopq_tail, iopq_head);
-                    iowrite32(iopq_head, pf_dev->amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOP_ADDR_TAIL);
-                }
         }
 
     /*
