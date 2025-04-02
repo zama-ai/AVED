@@ -381,7 +381,7 @@ static int create_pf_dev_data(struct pci_dev *dev)
     if (ret)
         goto delete_data;
 
-    // tandem change: Read vendor specific information
+    // tandem change: read directly vendor specific information
     ret = read_vsec(dev, pf_dev->pcie_config->ext_cap->vsec_base_addr, &pf_dev->endpoints);
     if (ret)
         goto delete_data;

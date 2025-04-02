@@ -857,6 +857,9 @@ static int map_amc_endpoints(struct pci_dev        *dev,
     pf_dev->pcie_config->header->bar[PCIE_BAR0].requested = true;
 
     /* Map the GCQ IP Region */
+    // bar num = 0
+    // bar len = 0x1000
+    // start address = 0x1010000
     amc_ctrl_ctxt->gcq_base_virt_addr = pci_iomap_range(amc_ctrl_ctxt->pcie_dev,
                                 0x0,
                                 0x1010000,
@@ -868,17 +871,10 @@ static int map_amc_endpoints(struct pci_dev        *dev,
         goto fail;
     }
 
-    // AMI_VDBG(amc_ctrl_ctxt,
-    //      "\t- gcq_start_phy          : 0x%llx",
-    //      ep_gcq.start_addr);
-    // AMI_VDBG(amc_ctrl_ctxt,
-    //      "\t- gcq_len                : 0x%llx",
-    //      ep_gcq.bar_len);
-    // AMI_VDBG(amc_ctrl_ctxt,
-    //      "\t- gcq_bar_num            : 0x%x",
-    //      ep_gcq.bar_num);
-
     /* Map the GCQ Payload Region */
+    // bar num = 0
+    // bar len = 0x8000000 (128M)
+    // start address = 0x8000000
     amc_ctrl_ctxt->gcq_payload_base_virt_addr = pci_iomap_range(amc_ctrl_ctxt->pcie_dev,
                                     0x0,
                                     0x8000000,
@@ -889,21 +885,6 @@ static int map_amc_endpoints(struct pci_dev        *dev,
         ret = -EIO;
         goto fail;
     }
-
-    // /* Map the Ring Buffer base address */
-    // AMI_VDBG(amc_ctrl_ctxt, "Successfully mapped GCQ payload");
-    // AMI_VDBG(amc_ctrl_ctxt,
-    //      "\t- gcq_payload_start_phy          : 0x%llx",
-    //      ep_gcq_payload.start_addr);
-    // AMI_VDBG(amc_ctrl_ctxt,
-    //      "\t- gcq_payload_len                : 0x%llx",
-    //      ep_gcq_payload.bar_len);
-    // AMI_VDBG(amc_ctrl_ctxt,
-    //      "\t- gcq_payload_bar_num            : 0x%x",
-    //      ep_gcq_payload.bar_num);
-    // AMI_VDBG(amc_ctrl_ctxt,
-    //      "\t- GCQ payload virtual addr       : 0x%p",
-    //      amc_ctrl_ctxt->gcq_payload_base_virt_addr);
 
     AMI_VDBG(amc_ctrl_ctxt, "Successfully mapped GCQ endpoints");
     return SUCCESS;

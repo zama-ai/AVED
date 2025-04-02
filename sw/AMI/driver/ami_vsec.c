@@ -82,7 +82,6 @@ int read_vsec(struct pci_dev *dev, uint32_t vsec_base_addr,
 	bool end_of_table = false;
 	uint32_t table_length = 0, table_entry_size = 0;
 	uint8_t ep_bar_num = 0;
-	// void * __iomem hw_discovery_virt_addr = NULL;
 	uint8_t pcie_function_num = 0;
 
 	if (!dev || !endpoints)
@@ -99,60 +98,6 @@ int read_vsec(struct pci_dev *dev, uint32_t vsec_base_addr,
 		ret = -ENOMEM;
 		goto fail;
 	}
-
-	/*
-	 * Additional List of Features (ALF) VSEC
-	 *
-	 *  ----------------------------------------------------------------------
-	 * | Next Cap [31:20] | Cap Version [19:16] | PCIe Extended Cap ID [15:0] |
-	 *  ----------------------------------------------------------------------
-	 * | VSEC Len [31:20] | VSEC Rev [19:16]    | VSEC ID [15:0]              |
-	 *  ----------------------------------------------------------------------
-	 * |             Low Address [31:4]         | Rsvd [3] | Bar Index [2:0]  |
-	 *  ----------------------------------------------------------------------
-	 * |                    High Address [31:0] effective [63:32]             |
-	 *  ----------------------------------------------------------------------
-	 */
-	// ret = pci_read_config_dword(dev, vsec_base_addr + ALF_VSEC_HDR_OFFSET,
-	// 	&read_buf);
-	// if (ret) {
-	// 	ret = -EIO;
-	// 	goto fail;
-	// }
-	// vsec_len = (read_buf >> ALF_VSEC_LEN_OFFSET) & ALF_VSEC_LEN_MASK;
-	// DEV_VDBG(dev, "vsec len : 0x%X", vsec_len);
-
-	// ret = pci_read_config_dword(dev, vsec_base_addr + ALF_VSEC_FIELD1_OFFSET,
-	// 	&read_buf);
-	// if (ret) {
-	// 	ret = -EIO;
-	// 	goto fail;
-	// }
-
-	// (*endpoints)->hw_discovery.bar_num = (read_buf >> ALF_VSEC_BAR_IDX_OFFSET) & ALF_VSEC_BAR_IDX_MASK;
-	// (*endpoints)->hw_discovery.start_addr = (read_buf >> ALF_VSEC_OFF_LOW_OFFSET) & ALF_VSEC_OFF_LOW_MASK;
-
-	// if (vsec_len == ALF_VSEC_HIGH_OFFSET_IMPLEMENTED) {
-	// 	/* Read the offset high register */
-	// 	ret = pci_read_config_dword(dev,
-	// 		vsec_base_addr + ALF_VSEC_FIELD2_OFFSET, &read_buf);
-	// 	if (ret) {
-	// 		ret = -EIO;
-	// 		goto fail;
-	// 	}
-
-	// 	(*endpoints)->hw_discovery.start_addr |= ((uint64_t)((read_buf >> ALF_VSEC_OFF_HIGH_OFFSET) &
-	// 		ALF_VSEC_OFF_HIGH_MASK) << ALF_VSEC_OFF_LOW_LEN);
-	// }
-
-	// (*endpoints)->hw_discovery.bar_len = XILINX_ENDPOINT_BAR_LEN_HW_DISCOVERY;
-	// (*endpoints)->hw_discovery.end_addr = (*endpoints)->hw_discovery.start_addr +
-	// 	(*endpoints)->hw_discovery.bar_len - 1;
-
-	// strcpy((*endpoints)->hw_discovery.name,
-	// 	XILINX_ENDPOINT_NAME_HW_DISCOVERY_PF0);
-
-	// print_endpoint_info(dev, (*endpoints)->hw_discovery);
 
 	/*
 	 * Traverse the Xilinx Capabilities
@@ -184,59 +129,8 @@ int read_vsec(struct pci_dev *dev, uint32_t vsec_base_addr,
 	 *  0x40 - 64 byte entry size
 	 *  0x80 - 128 byte entry size
 	 */
-
-	/* Map the Header Registers and Table Format */
-	// hw_discovery_virt_addr = pci_iomap_range(dev,
-	// 		(*endpoints)->hw_discovery.bar_num,
-	// 		(*endpoints)->hw_discovery.start_addr,
-	// 		XILINX_HW_DISCOVERY_TABLE_OFFSET);
-
-	// if (!hw_discovery_virt_addr) {
-	// 	DEV_ERR(dev, "Failed to map bar_layout into memory");
-	// 	ret = -EIO;
-	// 	goto fail;
-	// }
-
-	// DEV_VDBG(dev, "HW discovery Virt Addr : %p , Device Addr : %llx",
-	// 	hw_discovery_virt_addr,
-	// 	(*endpoints)->hw_discovery.start_addr);
-
-	// /* Calculate the length of all the table entries excluding header */
-	// read_buf = ioread32(hw_discovery_virt_addr + XILINX_HW_DISCOVERY_LEN_OFFSET);
-
-	// table_length = (read_buf & XILINX_HW_DISCOVERY_LEN_MASK) - XILINX_HW_DISCOVERY_TABLE_OFFSET;
-
-	// read_buf = ioread32(hw_discovery_virt_addr + XILINX_HW_DISCOVERY_ENTRY_SIZE_OFFSET);
 	table_length = 0x40;
 	table_entry_size = 0x10;
-
-	// DEV_VDBG(dev, "table_length : 0x%X, table_entry_size : 0x%X",
-	// 	table_length, table_entry_size);
-
-	// /* Do some basic sanity checking */
-	// if ((table_length == ((uint32_t)-1)) ||
-	// 		(table_entry_size > XILINX_HW_DISCOVERY_ENTRY_SIZE_MAX) ||
-	// 		((table_length % table_entry_size) != 0)) {
-	// 	DEV_ERR(dev, "Invalid table size");
-	// 	ret = -EINVAL;
-	// 	goto fail;
-	// }
-
-	// /* Unmap the memory mapped BAR region */
-	// DEV_VDBG(dev, "Unmapping BAR Entry");
-	// pci_iounmap(dev, hw_discovery_virt_addr);
-
-	// /* Map the Table Entry 1 ... n */
-	// hw_discovery_virt_addr = pci_iomap_range(dev,
-	// 		(*endpoints)->hw_discovery.bar_num,
-	// 		(*endpoints)->hw_discovery.start_addr + XILINX_HW_DISCOVERY_TABLE_OFFSET,
-	// 		table_length);
-
-	// if (!hw_discovery_virt_addr) {
-	// 	DEV_ERR(dev, "Failed to map bar table entry into memory");
-	// 	ret = -EIO;
-	// 	goto fail;
-	// }
 
 	/*
 	 *                                         Table Entry
@@ -343,10 +237,6 @@ int read_vsec(struct pci_dev *dev, uint32_t vsec_base_addr,
 			break;
 		}
 	}
-
-	// DEV_VDBG(dev, "Unmapping HW discovery BAR memory");
-	// pci_iounmap(dev, hw_discovery_virt_addr);
-	// hw_discovery_virt_addr = 0;
 
 	ret = read_logic_uuid(dev, endpoints);
 	if (ret)

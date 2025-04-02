@@ -972,7 +972,6 @@ int write_pcie_configuration(struct pci_dev *dev)
 			1,
 			&gpio_reset
 		);
-		printk("ret %x",ret);
 		if (ret) {
 			DEV_ERR(dev, "Failed to clear GPIO reset");
 			goto fail;
