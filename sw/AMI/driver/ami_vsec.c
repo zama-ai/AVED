@@ -38,17 +38,11 @@ int read_logic_uuid(struct pci_dev *dev, endpoints_struct **endpoints)
 		goto fail;
 	}
 
-	printk("uuid0_rom.bar_num %x", (*endpoints)->uuid0_rom.bar_num);
-	printk("uuid0_rom.start_addr %x", (*endpoints)->uuid0_rom.start_addr);
-	printk("uuid0_rom.bar_len %x", (*endpoints)->uuid0_rom.bar_len);
-
 	virt_addr = pci_iomap_range(dev,
 		(*endpoints)->uuid0_rom.bar_num,
 		(*endpoints)->uuid0_rom.start_addr,
 		(*endpoints)->uuid0_rom.bar_len);
 
-	printk("virt_addr %x", virt_addr);
-	printk("dev %x", dev);
 	if (!virt_addr) {
 		DEV_ERR(dev, "Could not map %s endpoint into virtual memory at start address 0x%llX",
 			(*endpoints)->uuid0_rom.name, (*endpoints)->uuid0_rom.start_addr);

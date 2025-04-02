@@ -963,12 +963,6 @@ int write_pcie_configuration(struct pci_dev *dev)
 	 * Identity event over GCQ will enable the hot reload so we must make
 	 * sure the PMC GPIO is cleared to prevent a reboot.
 	 */
-	printk("dev %x",dev);
-	printk("PCI_GPIO_RESET_BAR %x",PCI_GPIO_RESET_BAR);
-	printk("PCI_GPIO_RESET_OFFSET %x",PCI_GPIO_RESET_OFFSET);
-	printk("&gpio_reset %x",&gpio_reset);
-	printk("ret %x",ret);
-
 	if (PCI_FUNC(dev->devfn) == 0) {
 		DEV_VDBG(dev, "Clearing GPIO reset");
 		ret = write_pcie_bar(
