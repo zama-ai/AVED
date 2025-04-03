@@ -1017,6 +1017,20 @@ static DRIVER_ATTR_RW(ami_debug_enabled);
 int __init vmc_entry(void)
 {
     int ret = 0;
+    struct pci_dev *dev = NULL;
+    u8 command_register;
+
+    dev = pci_get_device(PCIE_VENDOR_ID, PCIE_DEVICE_ID, NULL);
+    ret = pci_read_config_byte(dev, 0x4, &command_register);
+
+    // Check if Bus Master Enable register is correctly set
+    if (get_pcie_command_master(command_register) != 1) {
+        PR_ERR("BAR0 bus master check failed: Normal between stage 1 and stage 2 programming");
+        return -EIO;
+    }
+
+    // release pci device structure
+    pci_dev_put(dev);
 
     /* Init FAL for GCQ */
     ret = ulFW_IF_GCQ_Init(&fw_if_gcq_init_cfg);
