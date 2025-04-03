@@ -20,6 +20,7 @@
 #include "ami_log.h"
 #include "ami_module.h"
 #include "ami_driver_version.h"
+#include "ami_vsec.h"
 
 /*****************************************************************************/
 /* Local Varaiables                                                          */
@@ -56,7 +57,6 @@ static DEFINE_XARRAY_ALLOC(cid_xarray);
 
 /* Number of permitted failures before raising a fatal event */
 #define HEARTBEAT_FAIL_THRESHOLD                (3)
-
 
 /*****************************************************************************/
 /* Private functions                                                         */
@@ -857,13 +857,10 @@ static int map_amc_endpoints(struct pci_dev        *dev,
     pf_dev->pcie_config->header->bar[PCIE_BAR0].requested = true;
 
     /* Map the GCQ IP Region */
-    // bar num = 0
-    // bar len = 0x1000
-    // start address = 0x1010000
     amc_ctrl_ctxt->gcq_base_virt_addr = pci_iomap_range(amc_ctrl_ctxt->pcie_dev,
-                                0x0,
-                                0x1010000,
-                                0x1000);
+        GCQ_IP_BAR_NUM,
+        GCQ_IP_START_ADDR,
+        GCQ_IP_BAR_LEN);
 
     if (!(amc_ctrl_ctxt->gcq_base_virt_addr)) {
         AMI_ERR(amc_ctrl_ctxt, "Could not map GCQ IP into virtual memory");
@@ -872,13 +869,10 @@ static int map_amc_endpoints(struct pci_dev        *dev,
     }
 
     /* Map the GCQ Payload Region */
-    // bar num = 0
-    // bar len = 0x8000000 (128M)
-    // start address = 0x8000000
     amc_ctrl_ctxt->gcq_payload_base_virt_addr = pci_iomap_range(amc_ctrl_ctxt->pcie_dev,
-                                    0x0,
-                                    0x8000000,
-                                    0x8000000);
+        GCQ_PAYLOAD_BAR_NUM,
+        GCQ_PAYLOAD_START_ADDR,
+        GCQ_PAYLOAD_BAR_LEN);
 
     if (!(amc_ctrl_ctxt->gcq_payload_base_virt_addr)) {
         AMI_ERR(amc_ctrl_ctxt, "Could not map GCQ payload into virtual memory");

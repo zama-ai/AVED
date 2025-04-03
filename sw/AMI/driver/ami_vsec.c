@@ -129,8 +129,8 @@ int read_vsec(struct pci_dev *dev, uint32_t vsec_base_addr,
 	 *  0x40 - 64 byte entry size
 	 *  0x80 - 128 byte entry size
 	 */
-	table_length = 0x40;
-	table_entry_size = 0x10;
+	table_length = TABLE_LEN;
+	table_entry_size = TABLE_ENTRY_SIZE;
 
 	/*
 	 *                                         Table Entry
@@ -145,15 +145,14 @@ int read_vsec(struct pci_dev *dev, uint32_t vsec_base_addr,
 	 *     |                                Rsvd[31:0]                                               |
 	 *      -----------------------------------------------------------------------------------------
 	 */
-	int ep_type[3]= {0x50,0x54,0x55};
-	int ep_start_addr[3] = {0x1001000, 0x1010000,0x8000000};
+	int ep_type[3]= {XILINX_TABLE_TYPE_UUID0_ROM,TABLE_TYPE_GCQ_IP,TABLE_TYPE_GCQ_PAYLOAD};
+	int ep_start_addr[3] = {UUID0_START_ADDR, GCQ_IP_START_ADDR,GCQ_PAYLOAD_START_ADDR};
 	int index = 0;
 
 	/* Traverse all the table entry */
 	for (i = 0; i < table_length; i += table_entry_size) {
 		if (end_of_table)
 			break;
-
 
 		ep_bar_num  = 0x0; /* BAR Num where the target aperture is located */
 
