@@ -1021,11 +1021,11 @@ int __init vmc_entry(void)
     u8 command_register;
 
     dev = pci_get_device(PCIE_VENDOR_ID, PCIE_DEVICE_ID, NULL);
-    ret = pci_read_config_byte(dev, 0x4, &command_register);
+    ret = pci_read_config_byte(dev, PCI_COMMAND, &command_register);
 
     // Check if Bus Master Enable register is correctly set
     if (get_pcie_command_master(command_register) != 1) {
-        PR_ERR("BAR0 bus master check failed: Normal between stage 1 and stage 2 programming");
+        PR_ERR("BAR0 bus master check failed: Expected if between stage 1 and stage 2 programming");
         return -EIO;
     }
 

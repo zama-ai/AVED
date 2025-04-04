@@ -83,6 +83,9 @@ int read_vsec(struct pci_dev *dev, uint32_t vsec_base_addr,
 	uint32_t table_length = 0, table_entry_size = 0;
 	uint8_t ep_bar_num = 0;
 	uint8_t pcie_function_num = 0;
+	uint32_t ep_type[4]= {XILINX_TABLE_TYPE_UUID0_ROM, XILINX_TABLE_TYPE_GCQ, XILINX_TABLE_TYPE_GCQ_PAYLOAD, XILINX_TABLE_TYPE_END_OF_TABLE};
+	uint32_t ep_start_addr[4] = {UUID0_START_ADDR, GCQ_IP_START_ADDR, GCQ_PAYLOAD_START_ADDR, 0};
+	int index = 0;
 
 	if (!dev || !endpoints)
 		return -EINVAL;
@@ -129,8 +132,8 @@ int read_vsec(struct pci_dev *dev, uint32_t vsec_base_addr,
 	 *  0x40 - 64 byte entry size
 	 *  0x80 - 128 byte entry size
 	 */
-	table_length = TABLE_LEN;
-	table_entry_size = TABLE_ENTRY_SIZE;
+	table_length = FAKE_HW_DISCOVERY_TABLE_LEN;
+	table_entry_size = FAKE_HW_DISCOVERY_TABLE_ENTRY_SIZE;
 
 	/*
 	 *                                         Table Entry
@@ -145,12 +148,9 @@ int read_vsec(struct pci_dev *dev, uint32_t vsec_base_addr,
 	 *     |                                Rsvd[31:0]                                               |
 	 *      -----------------------------------------------------------------------------------------
 	 */
-	int ep_type[3]= {XILINX_TABLE_TYPE_UUID0_ROM,TABLE_TYPE_GCQ_IP,TABLE_TYPE_GCQ_PAYLOAD};
-	int ep_start_addr[3] = {UUID0_START_ADDR, GCQ_IP_START_ADDR,GCQ_PAYLOAD_START_ADDR};
-	int index = 0;
 
 	/* Traverse all the table entry */
-	for (i = 0; i < table_length; i += table_entry_size) {
+	for (i = 0, index = 0; i < table_length; i += table_entry_size, index++) {
 		if (end_of_table)
 			break;
 
@@ -164,7 +164,7 @@ int read_vsec(struct pci_dev *dev, uint32_t vsec_base_addr,
 			(*endpoints)->uuid0_rom.bar_num = \
 				ep_bar_num;
 
-			(*endpoints)->uuid0_rom.start_addr = ep_start_addr[0];
+			(*endpoints)->uuid0_rom.start_addr = ep_start_addr[index];
 
 			(*endpoints)->uuid0_rom.bar_len = \
 				XILINX_ENDPOINT_BAR_LEN_UUID0_ROM;
@@ -187,7 +187,7 @@ int read_vsec(struct pci_dev *dev, uint32_t vsec_base_addr,
 				ep_bar_num;
 
 			(*endpoints)->gcq.start_addr = \
-				ep_start_addr[1];
+				ep_start_addr[index];
 
 			(*endpoints)->gcq.bar_len = \
 				XILINX_ENDPOINT_BAR_LEN_GCQ;
@@ -208,7 +208,7 @@ int read_vsec(struct pci_dev *dev, uint32_t vsec_base_addr,
 				ep_bar_num;
 
 			(*endpoints)->gcq_payload.start_addr = \
-				ep_start_addr[2];
+				ep_start_addr[index];
 
 			(*endpoints)->gcq_payload.bar_len = \
 				XILINX_ENDPOINT_BAR_LEN_GCQ_PAYLOAD;
@@ -230,7 +230,7 @@ int read_vsec(struct pci_dev *dev, uint32_t vsec_base_addr,
 		default:
 			DEV_ERR(dev,
 				"Found Unsupported or Reserved Type Endpoint: 0x%X",
-				ep_type);
+				ep_type[index]);
 			ret = -EINVAL;
 			goto fail;
 			break;

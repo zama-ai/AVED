@@ -82,20 +82,18 @@
 #define XILINX_LOGIC_UUID_SIZE_BYTES                16
 
 // Hardcoded Regions
-#define GCQ_IP_BAR_NUM      	0x0
-#define GCQ_IP_BAR_LEN      	0x1000
-#define GCQ_IP_START_ADDR   	0x1010000
+#define GCQ_IP_BAR_NUM          0x0
+#define GCQ_IP_BAR_LEN          0x1000
+#define GCQ_IP_START_ADDR       0x1010000
 
 #define GCQ_PAYLOAD_BAR_NUM     0x0
 #define GCQ_PAYLOAD_BAR_LEN     0x8000000
 #define GCQ_PAYLOAD_START_ADDR  0x8000000
 
-#define UUID0_START_ADDR 		0x1001000
+#define UUID0_START_ADDR        0x1001000
 
-#define TABLE_LEN 				0x40
-#define TABLE_ENTRY_SIZE 		0x10
-#define TABLE_TYPE_GCQ_IP 		0x54
-#define TABLE_TYPE_GCQ_PAYLOAD	0x55
+#define FAKE_HW_DISCOVERY_TABLE_LEN               0x40
+#define FAKE_HW_DISCOVERY_TABLE_ENTRY_SIZE        0x10
 
 enum xil_table_type {
 	XILINX_TABLE_TYPE_RSVD              = 0x00,
