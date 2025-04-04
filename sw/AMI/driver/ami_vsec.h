@@ -81,6 +81,20 @@
 
 #define XILINX_LOGIC_UUID_SIZE_BYTES                16
 
+// Hardcoded Regions
+#define GCQ_IP_BAR_NUM          0x0
+#define GCQ_IP_BAR_LEN          0x1000
+#define GCQ_IP_START_ADDR       0x1010000
+
+#define GCQ_PAYLOAD_BAR_NUM     0x0
+#define GCQ_PAYLOAD_BAR_LEN     0x8000000
+#define GCQ_PAYLOAD_START_ADDR  0x8000000
+
+#define UUID0_START_ADDR        0x1001000
+
+#define FAKE_HW_DISCOVERY_TABLE_LEN               0x40
+#define FAKE_HW_DISCOVERY_TABLE_ENTRY_SIZE        0x10
+
 enum xil_table_type {
 	XILINX_TABLE_TYPE_RSVD              = 0x00,
 	XILINX_TABLE_TYPE_PCIE_IP_VERSION,
@@ -103,14 +117,14 @@ enum xil_table_type {
 };
 
 typedef struct {
-	endpoint_info_struct hw_discovery;       
-	endpoint_info_struct uuid0_rom;          
-	endpoint_info_struct interpf_mailbox;    
-	endpoint_info_struct gcq;                
-	endpoint_info_struct gcq_payload;        
+	endpoint_info_struct hw_discovery;
+	endpoint_info_struct uuid0_rom;
+	endpoint_info_struct interpf_mailbox;
+	endpoint_info_struct gcq;
+	endpoint_info_struct gcq_payload;
 
-	uint32_t logic_uuid      [XILINX_LOGIC_UUID_SIZE_BYTES/sizeof(uint32_t)];   
-	char     logic_uuid_str  [XILINX_LOGIC_UUID_SIZE_BYTES*2+1];                
+	uint32_t logic_uuid      [XILINX_LOGIC_UUID_SIZE_BYTES/sizeof(uint32_t)];
+	char     logic_uuid_str  [XILINX_LOGIC_UUID_SIZE_BYTES*2+1];
 } endpoints_struct;
 
 int read_logic_uuid(struct pci_dev *dev, endpoints_struct **endpoints);

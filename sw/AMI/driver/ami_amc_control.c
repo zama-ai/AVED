@@ -20,6 +20,7 @@
 #include "ami_log.h"
 #include "ami_module.h"
 #include "ami_driver_version.h"
+#include "ami_vsec.h"
 
 /*****************************************************************************/
 /* Local Varaiables                                                          */
@@ -56,7 +57,6 @@ static DEFINE_XARRAY_ALLOC(cid_xarray);
 
 /* Number of permitted failures before raising a fatal event */
 #define HEARTBEAT_FAIL_THRESHOLD                (3)
-
 
 /*****************************************************************************/
 /* Private functions                                                         */
@@ -354,9 +354,8 @@ static int start_gcq_services(struct amc_control_ctxt *amc_ctrl_ctxt)
         ret = -ENODEV;
         goto fail;
     }
-
     amc_ctrl_ctxt->gcq_ring_buf_base_virt_addr = amc_ctrl_ctxt->gcq_payload_base_virt_addr +
-                             amc_ctrl_ctxt->amc_shared_mem.ring_buffer.ring_buffer_off;
+                                                 amc_ctrl_ctxt->amc_shared_mem.ring_buffer.ring_buffer_off;
 
     AMI_VDBG(amc_ctrl_ctxt,
          "\t- GCQ ring buffer virtual addr   : 0x%p",
@@ -859,9 +858,9 @@ static int map_amc_endpoints(struct pci_dev        *dev,
 
     /* Map the GCQ IP Region */
     amc_ctrl_ctxt->gcq_base_virt_addr = pci_iomap_range(amc_ctrl_ctxt->pcie_dev,
-                                ep_gcq.bar_num,
-                                ep_gcq.start_addr,
-                                ep_gcq.bar_len);
+        GCQ_IP_BAR_NUM,
+        GCQ_IP_START_ADDR,
+        GCQ_IP_BAR_LEN);
 
     if (!(amc_ctrl_ctxt->gcq_base_virt_addr)) {
         AMI_ERR(amc_ctrl_ctxt, "Could not map GCQ IP into virtual memory");
@@ -869,42 +868,17 @@ static int map_amc_endpoints(struct pci_dev        *dev,
         goto fail;
     }
 
-    AMI_VDBG(amc_ctrl_ctxt,
-         "\t- gcq_start_phy          : 0x%llx",
-         ep_gcq.start_addr);
-    AMI_VDBG(amc_ctrl_ctxt,
-         "\t- gcq_len                : 0x%llx",
-         ep_gcq.bar_len);
-    AMI_VDBG(amc_ctrl_ctxt,
-         "\t- gcq_bar_num            : 0x%x",
-         ep_gcq.bar_num);
-
     /* Map the GCQ Payload Region */
     amc_ctrl_ctxt->gcq_payload_base_virt_addr = pci_iomap_range(amc_ctrl_ctxt->pcie_dev,
-                                    ep_gcq_payload.bar_num,
-                                    ep_gcq_payload.start_addr,
-                                    ep_gcq_payload.bar_len);
+        GCQ_PAYLOAD_BAR_NUM,
+        GCQ_PAYLOAD_START_ADDR,
+        GCQ_PAYLOAD_BAR_LEN);
 
     if (!(amc_ctrl_ctxt->gcq_payload_base_virt_addr)) {
         AMI_ERR(amc_ctrl_ctxt, "Could not map GCQ payload into virtual memory");
         ret = -EIO;
         goto fail;
     }
-
-    /* Map the Ring Buffer base address */
-    AMI_VDBG(amc_ctrl_ctxt, "Successfully mapped GCQ payload");
-    AMI_VDBG(amc_ctrl_ctxt,
-         "\t- gcq_payload_start_phy          : 0x%llx",
-         ep_gcq_payload.start_addr);
-    AMI_VDBG(amc_ctrl_ctxt,
-         "\t- gcq_payload_len                : 0x%llx",
-         ep_gcq_payload.bar_len);
-    AMI_VDBG(amc_ctrl_ctxt,
-         "\t- gcq_payload_bar_num            : 0x%x",
-         ep_gcq_payload.bar_num);
-    AMI_VDBG(amc_ctrl_ctxt,
-         "\t- GCQ payload virtual addr       : 0x%p",
-         amc_ctrl_ctxt->gcq_payload_base_virt_addr);
 
     AMI_VDBG(amc_ctrl_ctxt, "Successfully mapped GCQ endpoints");
     return SUCCESS;
