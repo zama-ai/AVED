@@ -53,9 +53,6 @@ static FW_IF_GCQ_INIT_CFG fw_if_gcq_init_cfg = { 0 };
 /* Declared as extern in ami.h */
 bool ami_debug_enabled = true;
 
-/* PCIe Device Control Register */
-#define PCIE_CAP_MAX_PAYLOAD_SIZE_SHIFT 5
-
 /*
  * We need a global device mutex to fetch/delete device handles in situations
  * where we do not already hold a valid device pointer. This can't be embedded
@@ -1039,11 +1036,11 @@ int __init vmc_entry(void)
     // knowing where to read we will now fetch payload size in device capabilities/control
     pci_read_config_dword(dev, devctl_offset, &devctl_payload);
     // current max_payload_size is contained in [7:5] while supported payload is contained in [2:0]
-    curr_max_payload_size = (devctl_payload & PCI_EXP_DEVCTL_PAYLOAD) >> PCIE_CAP_MAX_PAYLOAD_SIZE_SHIFT;
+    curr_max_payload_size = (devctl_payload & PCI_EXP_DEVCTL_PAYLOAD);
 
     // checker: max payload must be different from zero
-    if (curr_max_payload_size == 0) {
-        PR_ERR("current max payload unset: Expected if between stage 1 and stage 2 programming");
+    if (curr_max_payload_size == PCI_EXP_DEVCTL_PAYLOAD_128B) {
+        PR_ERR("Current max payload at 128B (0): expected if between stage 1 and stage 2 programming, abort AMI init");
         return -EIO;
     }
 
