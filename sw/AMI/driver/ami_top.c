@@ -53,6 +53,9 @@ static FW_IF_GCQ_INIT_CFG fw_if_gcq_init_cfg = { 0 };
 /* Declared as extern in ami.h */
 bool ami_debug_enabled = true;
 
+/* PCIe Device Control Register */
+#define PCIE_CAP_MAX_PAYLOAD_SIZE_SHIFT 5
+
 /*
  * We need a global device mutex to fetch/delete device handles in situations
  * where we do not already hold a valid device pointer. This can't be embedded
@@ -1018,14 +1021,29 @@ int __init vmc_entry(void)
 {
     int ret = 0;
     struct pci_dev *dev = NULL;
-    u8 command_register;
+    int curr_max_payload_size;
+    int pcie_cap_offset;
+    int devctl_offset;
+    int devctl_payload;
 
+    // after first stage programmation of a tandem bitstream, we should see MaxPayload register as 0
+    // when programmation of stage 2 completes, it should be set to 512 bytes
+    // note that there are two registers in pcie for max payload: maximal supported payload and current maximal payload
     dev = pci_get_device(PCIE_VENDOR_ID, PCIE_DEVICE_ID, NULL);
-    ret = pci_read_config_byte(dev, PCI_COMMAND, &command_register);
 
-    // Check if Bus Master Enable register is correctly set
-    if (get_pcie_command_master(command_register) != 1) {
-        PR_ERR("BAR0 bus master check failed: Expected if between stage 1 and stage 2 programming");
+    // device capabilities register (PCI_CAP_ID_EXP) offset varies between devices
+    pcie_cap_offset = pci_find_capability(dev, PCI_CAP_ID_EXP);
+    // let's compute device capabilities control region (DEVCTL)
+    devctl_offset = pcie_cap_offset + PCI_EXP_DEVCTL;
+
+    // knowing where to read we will now fetch payload size in device capabilities/control
+    pci_read_config_dword(dev, devctl_offset, &devctl_payload);
+    // current max_payload_size is contained in [7:5] while supported payload is contained in [2:0]
+    curr_max_payload_size = (devctl_payload & PCI_EXP_DEVCTL_PAYLOAD) >> PCIE_CAP_MAX_PAYLOAD_SIZE_SHIFT;
+
+    // checker: max payload must be different from zero
+    if (curr_max_payload_size == 0) {
+        PR_ERR("current max payload unset: Expected if between stage 1 and stage 2 programming");
         return -EIO;
     }
 
