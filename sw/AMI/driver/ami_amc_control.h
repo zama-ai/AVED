@@ -653,6 +653,8 @@ struct amc_version {
     uint8_t  ver_patch;
     uint8_t  local_changes;
     uint16_t dev_commits;
+    uint8_t  ucore_ver_major;
+    uint8_t  ucore_ver_minor;
 };
 
 /**

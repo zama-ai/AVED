@@ -353,12 +353,14 @@ static ssize_t amc_version_show(struct device		*dev,
 			/* Format is MAJOR.MINOR.PATCH +COMMITS *CHANGES */
 			ret = sprintf(
 				buf,
-				"%hhd.%hhd.%hhd +%hd *%hhd\n",
+				"%hhd.%hhd.%hhd +%hd *%hhd - zama ucore %hhd.%hhd\n",
 				pf_dev->amc_ctrl_ctxt->version.ver_major,
 				pf_dev->amc_ctrl_ctxt->version.ver_minor,
 				pf_dev->amc_ctrl_ctxt->version.ver_patch,
 				pf_dev->amc_ctrl_ctxt->version.dev_commits,
-				pf_dev->amc_ctrl_ctxt->version.local_changes
+				pf_dev->amc_ctrl_ctxt->version.local_changes,
+				pf_dev->amc_ctrl_ctxt->version.ucore_ver_major,
+				pf_dev->amc_ctrl_ctxt->version.ucore_ver_minor
 			);
 		}
 		put_pf_dev_entry(pf_dev);

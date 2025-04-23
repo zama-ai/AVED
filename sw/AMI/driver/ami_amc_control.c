@@ -1848,15 +1848,19 @@ int setup_amc(struct pci_dev        *dev,
     (*amc_ctrl_ctxt)->version.local_changes = (uint8_t)version_buf[3];
     (*amc_ctrl_ctxt)->version.dev_commits = (uint16_t)(version_buf[4] & 0x00FF) |
                         (uint16_t)((version_buf[5] << 8) & 0xFF00);
+    (*amc_ctrl_ctxt)->version.ucore_ver_major = (uint8_t)version_buf[8];
+    (*amc_ctrl_ctxt)->version.ucore_ver_minor = (uint8_t)version_buf[9];
 
     DEV_VDBG(dev,
-         "amc version = %d.%d.%d-%d gcq version = %d.%d",
+         "amc version = %d.%d.%d-%d gcq version = %d.%d ucore = %d.%d",
          (*amc_ctrl_ctxt)->version.ver_major,
          (*amc_ctrl_ctxt)->version.ver_minor,
          (*amc_ctrl_ctxt)->version.ver_patch,
          (*amc_ctrl_ctxt)->version.dev_commits,
          (uint8_t)version_buf[6],
-         (uint8_t)version_buf[7]
+         (uint8_t)version_buf[7],
+         (*amc_ctrl_ctxt)->version.ucore_ver_major,
+         (*amc_ctrl_ctxt)->version.ucore_ver_minor
     );
 
     ret = check_gcq_supported_version(*amc_ctrl_ctxt, version_buf[6], version_buf[7]);
