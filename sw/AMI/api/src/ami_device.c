@@ -43,9 +43,9 @@
 #define SYSFS_DEV_NAME       "dev_name"
 #define SYSFS_AMC_VERSION    "amc_version"
 
-#define AMC_VERSION_ATTR_FMT     "%hhd.%hhd.%hhd +%hd *%hhd"
-#define AMC_VERSION_ATTR_FIELDS  (5)
-#define AMC_VERSION_ATTR_SIZE    (16)
+#define AMC_VERSION_ATTR_FMT     "%hhd.%hhd.%hhd +%hd *%hhd - zama ucore %hhd.%hhd"
+#define AMC_VERSION_ATTR_FIELDS  (7)
+#define AMC_VERSION_ATTR_SIZE    (32)
 
 /*
  * The AMI driver creates link speed/width attributes because
@@ -1072,7 +1072,9 @@ int ami_dev_get_amc_version(ami_device *dev, struct amc_version *amc_version)
             &amc_version->minor,
             &amc_version->patch,
             &amc_version->dev_commits,
-            &amc_version->local_changes
+            &amc_version->local_changes,
+            &amc_version->ucore_major,
+            &amc_version->ucore_minor
         );
 
         if (scan == AMC_VERSION_ATTR_FIELDS)
