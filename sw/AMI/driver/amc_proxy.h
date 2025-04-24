@@ -355,6 +355,15 @@ int amc_proxy_request_abort(struct amc_proxy_cmd_struct *cmd);
 int amc_proxy_request_identity(struct amc_proxy_cmd_struct *cmd);
 
 /**
+ * amc_proxy_request_ucore_version() - Request the Zama ucore version
+ *
+ * @cmd: the proxy command structure
+ *
+ * Return: The errno return code
+ */
+int amc_proxy_request_ucore_version(struct amc_proxy_cmd_struct *cmd);
+
+/**
  * amc_proxy_request_sensor() - Request sensor data based on the populated structure
  *
  * @cmd: the proxy command structure
@@ -465,6 +474,17 @@ int amc_proxy_request_debug_verbosity(struct amc_proxy_cmd_struct *cmd, uint8_t 
  */
 int amc_proxy_get_response_identity(struct amc_proxy_cmd_struct *cmd,
                                     struct amc_proxy_identify_response *identity);
+
+/**
+ * amc_proxy_get_response_ucore_version() - retrieve the identity response
+ *
+ * @cmd: the proxy command structure
+ * @identity: the structure to be populated with the major/minor version
+ *
+ * Return: The errno return code
+ */
+int amc_proxy_get_response_ucore_version(struct amc_proxy_cmd_struct *cmd,
+                                         struct amc_proxy_identify_response *identity);
 
 /**
  * amc_proxy_get_response_sensor() - check if a valid sensor response has been received

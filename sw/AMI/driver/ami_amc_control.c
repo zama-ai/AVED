@@ -663,6 +663,32 @@ static int get_gcq_version(struct amc_control_ctxt *amc_ctrl_ctxt, char *data_bu
 }
 
 /**
+ * get_ucore_version() - get the Zama ucore version.
+ * @amc_ctrl_ctxt: AMC data struct instance.
+ * @data_buf: the offset.
+ *
+ * Return: the errno code.
+ */
+static int get_ucore_version(struct amc_control_ctxt *amc_ctrl_ctxt, char *data_buf)
+{
+    int ret = SUCCESS;
+
+    if (!amc_ctrl_ctxt || !data_buf)
+        return -EINVAL;
+
+    ret = submit_gcq_command(amc_ctrl_ctxt,
+                 GCQ_SUBMIT_CMD_UCORE_VERSION,
+                 GCQ_CMD_FLAG_NONE,
+                 data_buf,
+                 0);
+
+    if (ret)
+        AMI_ERR(amc_ctrl_ctxt, "Failed to get the GCQ version");
+
+    return ret;
+}
+
+/**
  * check_gcq_supported_version() - check if the GCQ version is valid.
  * @amc_ctrl_ctxt: AMC data struct instance.
  * @major: the GCQ major version number
@@ -790,6 +816,10 @@ static enum amc_cmd_id get_cmd_command_id(enum gcq_submit_cmd_req cmd_req)
 
     case GCQ_SUBMIT_CMD_PEEKPOKE:
         id = AMC_CMD_ID_PEEKPOKE;
+        break;
+
+    case GCQ_SUBMIT_CMD_UCORE_VERSION:
+        id = AMC_CMD_ID_UCORE_VERSION;
         break;
 
     case GCQ_SUBMIT_CMD_MODULE_READ_WRITE:
@@ -1207,6 +1237,7 @@ int submit_gcq_command(struct amc_control_ctxt    *amc_ctrl_ctxt,
     case AMC_CMD_ID_HEARTBEAT:
     case AMC_CMD_ID_EEPROM_READ_WRITE:
     case AMC_CMD_ID_PEEKPOKE:
+    case AMC_CMD_ID_UCORE_VERSION:
     case AMC_CMD_ID_MODULE_READ_WRITE:
         if (!data_buf) {
             ret = -EINVAL;
@@ -1529,6 +1560,10 @@ int submit_gcq_command(struct amc_control_ctxt    *amc_ctrl_ctxt,
         break;
     }
 
+    case AMC_CMD_ID_UCORE_VERSION:
+        ret = amc_proxy_request_ucore_version(amc_proxy_cmd);
+        break;
+
     case AMC_CMD_ID_EEPROM_READ_WRITE:
     {
         struct amc_proxy_eeprom_rw_request eeprom_req = { 0 };
@@ -1621,6 +1656,16 @@ int submit_gcq_command(struct amc_control_ctxt    *amc_ctrl_ctxt,
             memcpy(&data_buf[4], &(identity.dev_commits), sizeof(uint16_t));
             memcpy(&data_buf[6], &(identity.link_ver_major), sizeof(uint8_t));
             memcpy(&data_buf[7], &(identity.link_ver_minor), sizeof(uint8_t));
+        }
+    }
+    break;
+    case AMC_CMD_ID_UCORE_VERSION:
+    {
+        struct amc_proxy_identify_response identity = { 0 };
+        ret = amc_proxy_get_response_ucore_version(amc_proxy_cmd, &identity);
+        if (!ret) {
+            memcpy(&data_buf[0], &(identity.ver_major), sizeof(uint8_t));
+            memcpy(&data_buf[1], &(identity.ver_minor), sizeof(uint8_t));
         }
     }
     break;
@@ -1848,19 +1893,16 @@ int setup_amc(struct pci_dev        *dev,
     (*amc_ctrl_ctxt)->version.local_changes = (uint8_t)version_buf[3];
     (*amc_ctrl_ctxt)->version.dev_commits = (uint16_t)(version_buf[4] & 0x00FF) |
                         (uint16_t)((version_buf[5] << 8) & 0xFF00);
-    (*amc_ctrl_ctxt)->version.ucore_ver_major = (uint8_t)version_buf[8];
-    (*amc_ctrl_ctxt)->version.ucore_ver_minor = (uint8_t)version_buf[9];
 
-    DEV_VDBG(dev,
-         "amc version = %d.%d.%d-%d gcq version = %d.%d ucore = %d.%d",
+
+    DEV_DBG(dev,
+         "amc version = %d.%d.%d-%d gcq version = %d.%d",
          (*amc_ctrl_ctxt)->version.ver_major,
          (*amc_ctrl_ctxt)->version.ver_minor,
          (*amc_ctrl_ctxt)->version.ver_patch,
          (*amc_ctrl_ctxt)->version.dev_commits,
          (uint8_t)version_buf[6],
-         (uint8_t)version_buf[7],
-         (*amc_ctrl_ctxt)->version.ucore_ver_major,
-         (*amc_ctrl_ctxt)->version.ucore_ver_minor
+         (uint8_t)version_buf[7]
     );
 
     ret = check_gcq_supported_version(*amc_ctrl_ctxt, version_buf[6], version_buf[7]);
@@ -1889,6 +1931,23 @@ int setup_amc(struct pci_dev        *dev,
                 /* Prevents thread being stopped again via unset_amc */
                 (*amc_ctrl_ctxt)->logging_thread_created = false;
         }
+    }
+
+    // get Zama ucore version only if AMC version was validated
+    if (!(*amc_ctrl_ctxt)->compat_mode) {
+        memset(version_buf, 0, sizeof(version_buf));
+        ret = get_ucore_version(*amc_ctrl_ctxt, version_buf);
+        if (ret) {
+            ret = -EIO;
+            goto fail;
+        }
+        (*amc_ctrl_ctxt)->version.ucore_ver_major = (uint8_t)version_buf[0];
+        (*amc_ctrl_ctxt)->version.ucore_ver_minor = (uint8_t)version_buf[1];
+        DEV_INFO(dev,
+             "ucore version = %d.%d",
+             (*amc_ctrl_ctxt)->version.ucore_ver_major,
+             (*amc_ctrl_ctxt)->version.ucore_ver_minor
+        );
     }
 
     vfree(version_buf);

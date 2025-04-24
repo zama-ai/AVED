@@ -62,6 +62,7 @@ enum amc_proxy_cmd_opcode {
         AMC_PROXY_CMD_OPCODE_SENSOR            = 0xC,
         AMC_PROXY_CMD_OPCODE_PARTITION_COPY    = 0xD,
         AMC_PROXY_CMD_OPCODE_IDENTIFY          = 0x202,
+        AMC_PROXY_CMD_OPCODE_UCORE_VERSION     = 0x203,
         AMC_PROXY_CMD_OPCODE_AMI_PEEK_POKE     = 0xDEC,
         AMC_PROXY_CMD_OPCODE_AMI_IOP_PUSH      = 0xCAB,
 
@@ -1096,6 +1097,45 @@ int amc_proxy_request_identity(struct amc_proxy_cmd_struct *cmd)
 }
 
 /*
+ * Generate an ucore version request
+ */
+int amc_proxy_request_ucore_version(struct amc_proxy_cmd_struct *cmd)
+{
+        struct amc_proxy_list_entry *amc_ctxt = NULL;
+        int ret = -EPERM;
+
+        if (!cmd) {
+               return(-EINVAL);
+        }
+
+        amc_ctxt = amc_proxy_find_matching_proxy_instance(cmd->cmd_fw_if_gcq);
+        if (amc_ctxt && amc_ctxt->inst.initialised) {
+
+                struct amc_proxy_cmd_request request_cmd_entry = {{{{0}}}};
+                struct amc_proxy_cmd_request_hdr *request_hdr = NULL;
+                request_hdr = &(request_cmd_entry.hdr);
+                request_hdr->state = AMC_PROXY_REQUEST_CMD_NEW;
+                request_hdr->opcode = AMC_PROXY_CMD_OPCODE_UCORE_VERSION;
+                request_hdr->count = 0; /* No payload for identity request */
+                request_hdr->cid = cmd->cmd_cid;
+                ret = amc_ctxt->inst.fw_if_handle->write(amc_ctxt->inst.fw_if_handle, 0,
+                                                                (uint8_t*)&(request_cmd_entry),
+                                                                sizeof(request_cmd_entry), 0);
+                if (ret == FW_IF_ERRORS_NONE) {
+                        mutex_lock(&(amc_ctxt->inst.lock));
+                        list_add_tail(&(cmd->cmd_list), &(amc_ctxt->inst.submitted_cmds));
+                        mutex_unlock(&(amc_ctxt->inst.lock));
+                        ret = 0;
+                } else {
+                        PR_ERR("FW_IF write request failed: %d", ret);
+                        ret = -EIO;
+                }
+        }
+
+        return ret;
+}
+
+/*
  * Generate a sensor request
  */
 int amc_proxy_request_sensor(struct amc_proxy_cmd_struct *cmd,
@@ -1532,6 +1572,35 @@ int amc_proxy_get_response_identity(struct amc_proxy_cmd_struct *cmd,
                 /* GCQ version */
                 identity->link_ver_major = identity_payload->link_ver_major;
                 identity->link_ver_minor = identity_payload->link_ver_minor;
+
+                ret = 0;
+        }
+
+        return ret;
+}
+
+/*
+ * Read back ucore version response
+ */
+int amc_proxy_get_response_ucore_version(struct amc_proxy_cmd_struct *cmd,
+                                    struct amc_proxy_identify_response *identity)
+{
+        struct amc_proxy_list_entry *amc_ctxt = NULL;
+        int ret = -EPERM;
+
+        if (!cmd || !identity) {
+                return(-EINVAL);
+        }
+
+        amc_ctxt = amc_proxy_find_matching_proxy_instance(cmd->cmd_fw_if_gcq);
+        if (amc_ctxt && amc_ctxt->inst.initialised) {
+
+                struct amc_proxy_cmd_resp_identify_payload *identity_payload =
+                        (struct amc_proxy_cmd_resp_identify_payload *)&cmd->cmd_response;
+
+                /* UCORE version */
+                identity->ver_major = identity_payload->ver_major;
+                identity->ver_minor = identity_payload->ver_minor;
 
                 ret = 0;
         }

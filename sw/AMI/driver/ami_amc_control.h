@@ -147,6 +147,7 @@ enum gcq_submit_cmd_flags {
  * @GCQ_SUBMIT_CMD_MODULE_READ_WRITE: Read/write a QSFP module
  * @GCQ_SUBMIT_CMD_DEBUG_VERBOSITY: Debug verbosity
  * @GCQ_SUBMIT_CMD_PEEKPOKE: peek or poke pl register
+ * @GCQ_SUBMIT_CMD_UCORE_VERSION: get Zama ucore version
  */
 enum gcq_submit_cmd_req {
     GCQ_SUBMIT_CMD_RSVD                         = 0x00,
@@ -177,6 +178,7 @@ enum gcq_submit_cmd_req {
     GCQ_SUBMIT_CMD_MODULE_READ_WRITE            = 0x90,
     GCQ_SUBMIT_CMD_DEBUG_VERBOSITY              = 0x91,
     GCQ_SUBMIT_CMD_PEEKPOKE                     = 0xDEC,
+    GCQ_SUBMIT_CMD_UCORE_VERSION                = 0xDED,
 };
 
 /**
@@ -365,6 +367,7 @@ enum sdr_buf_index {
  * @AMC_CMD_ID_MODULE_READ_WRITE: module read/write command
  * @AMC_CMD_ID_DEBUG_VERBOSITY: debug verbosity command
  * @AMC_CMD_ID_PEEKPOKE: pl peek poke
+ * @AMC_CMD_ID_UCORE_VERSION: ucore version command
  */
 enum amc_cmd_id {
     AMC_CMD_ID_UNKNOWN = -EINVAL,
@@ -378,6 +381,7 @@ enum amc_cmd_id {
     AMC_CMD_ID_MODULE_READ_WRITE,
     AMC_CMD_ID_DEBUG_VERBOSITY,
     AMC_CMD_ID_PEEKPOKE,
+    AMC_CMD_ID_UCORE_VERSION,
 
     AMC_CMD_ID_MAX
 };
