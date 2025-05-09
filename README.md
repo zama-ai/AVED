@@ -15,7 +15,7 @@ The TFHE accelerator developed by Zama is running on [Alveo V80 board](https://w
   - [sw/AMI/app/cmd_handlers/cmd_peek.c](/sw/AMI/app/cmd_handlers/cmd_peek.c)
   - [sw/AMI/app/cmd_handlers/cmd_poke.c](/sw/AMI/app/cmd_handlers/cmd_peek.c)
 - push instructions to this accelerator:
-  - added iop_push command to ami char device, see [sw/AMI/driver/ami_cdev.h](/sw/AMI/driver/ami_cdev.h)
+  - added `iop_push` command to ami char device, see [sw/AMI/driver/ami_cdev.h](/sw/AMI/driver/ami_cdev.h)
   - this command is pushing accelerator instructions in a queue located in DDR of V80
   - [sw/AMI/driver/ami_iop_push.c](/sw/AMI/driver/ami_iop_push.c)
 
