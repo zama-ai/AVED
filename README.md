@@ -8,7 +8,7 @@ Full documentation for the ALVEO Versal Example Design can be found at the follo
 The TFHE accelerator developed by Zama is running on [Alveo V80 board](https://www.amd.com/en/products/accelerators/alveo/v80.html) and is today using the AMI driver to:
 - manage the V80 board: load flash, reload fpga, read sensors...
 - read and write registers of this accelerator:
-  - added peek & poke commands to ami char device, see [sw/AMI/driver/ami_cdev.h](/sw/AMI/driver/ami_cdev.h)
+  - added `peek` & `poke` commands to ami char device, see [sw/AMI/driver/ami_cdev.h](/sw/AMI/driver/ami_cdev.h)
   - these 2 commands are generating GCQ commands to read & write our accelerator registers
   - [sw/AMI/driver/ami_peekpoke.c](/sw/AMI/driver/ami_peekpoke.c)
   - [sw/AMI/api/src/ami_peek_poke_access.c](/sw/AMI/api/src/ami_peek_poke_access.c)
