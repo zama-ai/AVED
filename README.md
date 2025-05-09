@@ -19,7 +19,7 @@ The TFHE accelerator developed by Zama is running on [Alveo V80 board](https://w
   - this command is pushing accelerator instructions in a queue located in DDR of V80
   - [sw/AMI/driver/ami_iop_push.c](/sw/AMI/driver/ami_iop_push.c)
 
-The small additions we did on the ami_tool application and the AMI driver are mainly related to these two latest objectives. We also added a guardrail in cfgmem_program to prevent a PDI without firmware to be loaded in the flash and updated the API to manage properly both PCIe physical functions when reloading the FPGA.
+The small additions we did on the ami_tool application and the AMI driver are mainly related to these two latest objectives. We also added a guardrail in `cfgmem_program` to prevent a PDI without firmware from being loaded in the flash and updated the API to properly manage both PCIe physical functions when reloading the FPGA.
 
 As this AMI driver and the associated API & application (ami_tool) are GPL-2.0-only, we decided to keep these in a separate repository.
 When running the Zama TFHE accelerator on V80 FPGA board, only binary compilation results from this repository are used.
