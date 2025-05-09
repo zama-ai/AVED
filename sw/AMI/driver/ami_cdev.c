@@ -33,7 +33,7 @@
 #define IS_ROOT_USER(uid, euid)  (capable(CAP_DAC_OVERRIDE) || (uid == ROOT_USER) || (euid == ROOT_USER))
 
 
-static int dev_major = 0;  /* This will be overriden. */
+static int dev_major = 0;  /* This will be overridden. */
 
 
 /**
@@ -43,7 +43,7 @@ static int dev_major = 0;  /* This will be overriden. */
  *
  * Return: NULL.
  */
-static char *devnode(struct device *dev, umode_t *mode)
+static char *devnode(const struct device *dev, umode_t *mode)
 {
     if (mode)
         *mode = READ_WRITE;
@@ -848,7 +848,7 @@ int create_cdev(unsigned baseminor, struct drv_cdev_struct *drv_cdev,
 
     if(!drv_cdev->dev_class) {
         cls_created = true;
-        drv_cdev->dev_class = class_create(THIS_MODULE, drv_cdev->drv_cls_str);
+        drv_cdev->dev_class = class_create(drv_cdev->drv_cls_str);
         if (IS_ERR(drv_cdev->dev_class)) {
             ret = PTR_ERR(drv_cdev->dev_class);
             PR_ERR("Failed to create class %s. ret : %d",
