@@ -43,7 +43,11 @@ static int dev_major = 0;  /* This will be overridden. */
  *
  * Return: NULL.
  */
+#ifdef IS_ALMALINUX
 static char *devnode(const struct device *dev, umode_t *mode)
+#elif IS_UBUNTU
+static char *devnode(struct device *dev, umode_t *mode)
+#endif
 {
     if (mode)
         *mode = READ_WRITE;
@@ -848,7 +852,11 @@ int create_cdev(unsigned baseminor, struct drv_cdev_struct *drv_cdev,
 
     if(!drv_cdev->dev_class) {
         cls_created = true;
+        #ifdef IS_ALMALINUX
         drv_cdev->dev_class = class_create(drv_cdev->drv_cls_str);
+        #elif IS_UBUNTU
+        drv_cdev->dev_class = class_create(THIS_MODULE, drv_cdev->drv_cls_str);
+        #endif
         if (IS_ERR(drv_cdev->dev_class)) {
             ret = PTR_ERR(drv_cdev->dev_class);
             PR_ERR("Failed to create class %s. ret : %d",
