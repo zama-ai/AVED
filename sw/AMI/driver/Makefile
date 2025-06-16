@@ -10,9 +10,9 @@ DISTRO_ID := $(shell grep -E '^ID=' /etc/os-release 2>/dev/null | cut -d'=' -f2 
 
 # Set distribution-specific flags
 ifeq ($(DISTRO_ID),ubuntu)
-    DISTRO_FLAGS = -DDISTRO_UBUNTU=1 -DDISTRO_ALMALINUX=0
+    DISTRO_FLAGS = -DDISTRO_UBUNTU=1
 else ifeq ($(DISTRO_ID),almalinux)
-    DISTRO_FLAGS = -DDISTRO_ALMALINUX=1 -DDISTRO_UBUNTU=0
+    DISTRO_FLAGS = -DDISTRO_ALMALINUX=1
 else
     $(error Only Almalinux and Ubuntu are supported.)
 endif
