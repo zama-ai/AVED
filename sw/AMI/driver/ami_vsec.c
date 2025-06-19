@@ -28,21 +28,22 @@ int read_logic_uuid(struct pci_dev *dev, endpoints_struct **endpoints)
 		goto fail;
 	}
 
-	ret = pci_request_region(dev, (*endpoints)->uuid0_rom.bar_num, 
+	ret = pci_request_region(dev, (*endpoints)->uuid0_rom.bar_num,
 			PCIE_BAR_NAME[(*endpoints)->uuid0_rom.bar_num]);
 	if (ret) {
-		DEV_ERR(dev, "Could not request %s region (%s)", 
+		DEV_ERR(dev, "Could not request %s region (%s)",
 			PCIE_BAR_NAME[(*endpoints)->uuid0_rom.bar_num],
 			(*endpoints)->uuid0_rom.name);
 		ret = -EIO;
 		goto fail;
 	}
 
-	virt_addr = pci_iomap_range(dev, (*endpoints)->uuid0_rom.bar_num, 
+	virt_addr = pci_iomap_range(dev, (*endpoints)->uuid0_rom.bar_num,
 			(*endpoints)->uuid0_rom.start_addr,
 			(*endpoints)->uuid0_rom.bar_len);
+
 	if (!virt_addr) {
-		DEV_ERR(dev, "Could not map %s endpoint into virtual memory at start address 0x%llX", 
+		DEV_ERR(dev, "Could not map %s endpoint into virtual memory at start address 0x%llX",
 			(*endpoints)->uuid0_rom.name, (*endpoints)->uuid0_rom.start_addr);
 		ret = -EIO;
 		goto release_bar;
@@ -77,14 +78,10 @@ int read_vsec(struct pci_dev *dev, uint32_t vsec_base_addr,
 {
 	int ret = 0;
 	int i = 0;
-	uint32_t read_buf = 0;
 	bool end_of_table = false;
 	uint32_t table_length = 0, table_entry_size = 0;
-	uint8_t ep_type = 0, ep_bar_num = 0;
-	uint64_t ep_start_addr = 0;
-	void * __iomem hw_discovery_virt_addr = NULL;
+	uint8_t ep_bar_num = 0;
 	uint8_t pcie_function_num = 0;
-	uint16_t vsec_len = 0;
 
 	if (!dev || !endpoints)
 		return -EINVAL;
@@ -114,50 +111,6 @@ int read_vsec(struct pci_dev *dev, uint32_t vsec_base_addr,
 	 * |                    High Address [31:0] effective [63:32]             |
 	 *  ----------------------------------------------------------------------
 	 */
-	ret = pci_read_config_dword(dev, vsec_base_addr + ALF_VSEC_HDR_OFFSET,
-		&read_buf);
-	if (ret) {
-		ret = -EIO;
-		goto fail;
-	}
-	vsec_len = (read_buf >> ALF_VSEC_LEN_OFFSET) & ALF_VSEC_LEN_MASK;
-	DEV_VDBG(dev, "vsec len : 0x%X", vsec_len);
-
-	ret = pci_read_config_dword(dev, vsec_base_addr + ALF_VSEC_FIELD1_OFFSET,
-		&read_buf);
-	if (ret) {
-		ret = -EIO;
-		goto fail;
-	}
-
-	(*endpoints)->hw_discovery.bar_num = \
-		(read_buf >> ALF_VSEC_BAR_IDX_OFFSET) & ALF_VSEC_BAR_IDX_MASK;
-	(*endpoints)->hw_discovery.start_addr = \
-		(read_buf >> ALF_VSEC_OFF_LOW_OFFSET) & ALF_VSEC_OFF_LOW_MASK;
-
-	if (vsec_len == ALF_VSEC_HIGH_OFFSET_IMPLEMENTED) {
-		/* Read the offset high register */
-		ret = pci_read_config_dword(dev,
-			vsec_base_addr + ALF_VSEC_FIELD2_OFFSET, &read_buf);
-		if (ret) {
-			ret = -EIO;
-			goto fail;
-		}
-
-		(*endpoints)->hw_discovery.start_addr |= \
-			((uint64_t)((read_buf >> ALF_VSEC_OFF_HIGH_OFFSET) &
-			ALF_VSEC_OFF_HIGH_MASK) << ALF_VSEC_OFF_LOW_LEN);
-	}
-
-	(*endpoints)->hw_discovery.bar_len = XILINX_ENDPOINT_BAR_LEN_HW_DISCOVERY;
-	(*endpoints)->hw_discovery.end_addr = \
-		(*endpoints)->hw_discovery.start_addr +
-		(*endpoints)->hw_discovery.bar_len - 1;
-
-	strcpy((*endpoints)->hw_discovery.name,
-		XILINX_ENDPOINT_NAME_HW_DISCOVERY_PF0);
-
-	print_endpoint_info(dev, (*endpoints)->hw_discovery);
 
 	/*
 	 * Traverse the Xilinx Capabilities
@@ -190,62 +143,9 @@ int read_vsec(struct pci_dev *dev, uint32_t vsec_base_addr,
 	 *  0x80 - 128 byte entry size
 	 */
 
-	/* Map the Header Registers and Table Format */
-	hw_discovery_virt_addr = pci_iomap_range(dev,
-			(*endpoints)->hw_discovery.bar_num,
-			(*endpoints)->hw_discovery.start_addr,
-			XILINX_HW_DISCOVERY_TABLE_OFFSET);
 
-	if (!hw_discovery_virt_addr) {
-		DEV_ERR(dev, "Failed to map bar_layout into memory");
-		ret = -EIO;
-		goto fail;
-	}
-
-	DEV_VDBG(dev, "HW discovery Virt Addr : %p , Device Addr : %llx",
-		hw_discovery_virt_addr,
-		(*endpoints)->hw_discovery.start_addr);
-
-	/* Calculate the length of all the table entries excluding header */
-	read_buf = ioread32(hw_discovery_virt_addr + \
-		XILINX_HW_DISCOVERY_LEN_OFFSET);
-
-	table_length = (read_buf & XILINX_HW_DISCOVERY_LEN_MASK) - \
-		XILINX_HW_DISCOVERY_TABLE_OFFSET;
-
-	read_buf = ioread32(hw_discovery_virt_addr + \
-		XILINX_HW_DISCOVERY_ENTRY_SIZE_OFFSET);
-
-	table_entry_size = read_buf & XILINX_HW_DISCOVERY_ENTRY_SIZE_MASK;
-
-	DEV_VDBG(dev, "table_length : 0x%X, table_entry_size : 0x%X",
-		table_length, table_entry_size);
-	
-	/* Do some basic sanity checking */
-	if ((table_length == ((uint32_t)-1)) ||
-			(table_entry_size > XILINX_HW_DISCOVERY_ENTRY_SIZE_MAX) ||
-			((table_length % table_entry_size) != 0)) {
-		DEV_ERR(dev, "Invalid table size");
-		ret = -EINVAL;
-		goto fail;
-	}
-
-	/* Unmap the memory mapped BAR region */
-	DEV_VDBG(dev, "Unmapping BAR Entry");
-	pci_iounmap(dev, hw_discovery_virt_addr);
-
-	/* Map the Table Entry 1 ... n */
-	hw_discovery_virt_addr = pci_iomap_range(dev,
-			(*endpoints)->hw_discovery.bar_num,
-			(*endpoints)->hw_discovery.start_addr + \
-			XILINX_HW_DISCOVERY_TABLE_OFFSET,
-			table_length);
-
-	if (!hw_discovery_virt_addr) {
-		DEV_ERR(dev, "Failed to map bar table entry into memory");
-		ret = -EIO;
-		goto fail;
-	}
+	table_length = 0x40;
+	table_entry_size = 0x10;
 
 	/*
 	 *                                         Table Entry
@@ -260,44 +160,18 @@ int read_vsec(struct pci_dev *dev, uint32_t vsec_base_addr,
 	 *     |                                Rsvd[31:0]                                               |
 	 *      -----------------------------------------------------------------------------------------
 	 */
+	int ep_type[3]= {0x50,0x54,0x55};
+	int ep_start_addr[3] = {0x1001000, 0x1010000,0x8000000};
+	int index = 0;
 
 	/* Traverse all the table entry */
 	for (i = 0; i < table_length; i += table_entry_size) {
 		if (end_of_table)
 			break;
 
-		DEV_VDBG(dev, "Table entry device base addr : 0x%llX (virt addr = %p)",
-			(*endpoints)->hw_discovery.start_addr +
-			XILINX_HW_DISCOVERY_TABLE_OFFSET + i,
-			hw_discovery_virt_addr + i);
+		ep_bar_num  = 0x0; /* BAR Num where the target aperture is located */
 
-		read_buf = ioread32(hw_discovery_virt_addr + i +
-			XILINX_HW_DISCOVERY_TABLE_ENTRY_ROW_0_OFFSET);
-
-		ep_type = (read_buf >> XILINX_HW_DISCOVERY_TABLE_TYPE_OFFSET) &
-			XILINX_HW_DISCOVERY_TABLE_TYPE_MASK;
-
-		ep_bar_num  = \
-			(read_buf >> XILINX_HW_DISCOVERY_TABLE_EP_BAR_NUM_OFFSET) &
-			XILINX_HW_DISCOVERY_TABLE_EP_BAR_IDX_MASK; /* BAR Num where the target aperture is located */
-
-		ep_start_addr = \
-			(read_buf >> XILINX_HW_DISCOVERY_TABLE_OFF_LOW_OFFSET) &
-			XILINX_HW_DISCOVERY_TABLE_OFF_LOW_MASK;
-
-		read_buf = ioread32(hw_discovery_virt_addr + i +
-			XILINX_HW_DISCOVERY_TABLE_ENTRY_ROW_1_OFFSET);
-
-		ep_start_addr |= \
-			((uint64_t)((read_buf >> XILINX_HW_DISCOVERY_TABLE_OFF_HIGH_OFFSET) &
-				XILINX_HW_DISCOVERY_TABLE_OFF_HIGH_MASK) <<
-			XILINX_HW_DISCOVERY_TABLE_OFF_LOW_LEN);
-
-		DEV_VDBG(dev,
-			"ep_type : 0x%X, ep_bar_num : 0x%X, ep_start_addr : 0x%llX",
-			ep_type, ep_bar_num, ep_start_addr);
-
-		switch(ep_type) {
+		switch(ep_type[index]) {
 		case XILINX_TABLE_TYPE_UUID0_ROM:
 			(*endpoints)->uuid0_rom.found = \
 				true;
@@ -306,7 +180,7 @@ int read_vsec(struct pci_dev *dev, uint32_t vsec_base_addr,
 				ep_bar_num;
 
 			(*endpoints)->uuid0_rom.start_addr = \
-				ep_start_addr;
+				ep_start_addr[0];
 
 			(*endpoints)->uuid0_rom.bar_len = \
 				XILINX_ENDPOINT_BAR_LEN_UUID0_ROM;
@@ -321,29 +195,6 @@ int read_vsec(struct pci_dev *dev, uint32_t vsec_base_addr,
 			print_endpoint_info(dev, (*endpoints)->uuid0_rom);
 			break;
 
-		case XILINX_TABLE_TYPE_INTER_PF_MAILBOX:
-			(*endpoints)->interpf_mailbox.found = \
-				true;
-
-			(*endpoints)->interpf_mailbox.bar_num = \
-				ep_bar_num;
-
-			(*endpoints)->interpf_mailbox.start_addr = \
-				ep_start_addr;
-
-			(*endpoints)->interpf_mailbox.bar_len = \
-				XILINX_ENDPOINT_BAR_LEN_INTERPF_MAILBOX;
-
-			(*endpoints)->interpf_mailbox.end_addr = \
-				(*endpoints)->interpf_mailbox.start_addr +
-				(*endpoints)->interpf_mailbox.bar_len - 1;
-
-			strcpy((*endpoints)->interpf_mailbox.name,
-				XILINX_ENDPOINT_NAME_INTERPF_MAILBOX_PF0);
-
-			print_endpoint_info(dev, (*endpoints)->interpf_mailbox);
-			break;
-
 		case XILINX_TABLE_TYPE_GCQ:
 			(*endpoints)->gcq.found = \
 				true;
@@ -352,7 +203,7 @@ int read_vsec(struct pci_dev *dev, uint32_t vsec_base_addr,
 				ep_bar_num;
 
 			(*endpoints)->gcq.start_addr = \
-				ep_start_addr;
+				ep_start_addr[1];
 
 			(*endpoints)->gcq.bar_len = \
 				XILINX_ENDPOINT_BAR_LEN_GCQ;
@@ -373,7 +224,7 @@ int read_vsec(struct pci_dev *dev, uint32_t vsec_base_addr,
 				ep_bar_num;
 
 			(*endpoints)->gcq_payload.start_addr = \
-				ep_start_addr;
+				ep_start_addr[2];
 
 			(*endpoints)->gcq_payload.bar_len = \
 				XILINX_ENDPOINT_BAR_LEN_GCQ_PAYLOAD;
@@ -402,10 +253,6 @@ int read_vsec(struct pci_dev *dev, uint32_t vsec_base_addr,
 		}
 	}
 
-	DEV_VDBG(dev, "Unmapping HW discovery BAR memory");
-	pci_iounmap(dev, hw_discovery_virt_addr);
-	hw_discovery_virt_addr = 0;
-
 	ret = read_logic_uuid(dev, endpoints);
 	if (ret)
 		goto fail;
@@ -414,10 +261,6 @@ int read_vsec(struct pci_dev *dev, uint32_t vsec_base_addr,
 	return SUCCESS;
 
 fail:
-	if (hw_discovery_virt_addr)
-		pci_iounmap(dev, hw_discovery_virt_addr);
-
-	release_vsec_mem(endpoints);
 	DEV_ERR(dev, "Failed to read Vendor Specific Region (VSEC)");
 	return ret;
 }
