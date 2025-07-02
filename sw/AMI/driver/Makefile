@@ -5,6 +5,20 @@ TARGET_MODULE:=ami
 
 #define VERBOSE_DEBUG 1
 
+# Detect distribution automatically
+DISTRO_ID := $(shell grep -E '^ID=' /etc/os-release 2>/dev/null | cut -d'=' -f2 | tr -d '"')
+
+# Set distribution-specific flags
+ifeq ($(DISTRO_ID),ubuntu)
+    DISTRO_FLAGS = -DDISTRO_UBUNTU=1
+else ifeq ($(DISTRO_ID),almalinux)
+    DISTRO_FLAGS = -DDISTRO_ALMALINUX=1
+else
+    $(error Only Almalinux and Ubuntu are supported.)
+endif
+
+$(info $(DISTRO_ID) has been detected, Continuing ...)
+
 obj-m += $(TARGET_MODULE).o
 
 $(TARGET_MODULE)-objs += ami_top.o
@@ -38,7 +52,7 @@ KERNEL_DIR = /lib/modules/`uname -r`/build
 
 #To apply the macro to all the source files compiled with this makefile
 # ccflags-y:=-DDEBUG
-ccflags-y:=-DDEBUG -DVERBOSE_DEBUG -DGCQ_MAX_INSTANCES=16
+ccflags-y:=-DDEBUG -DVERBOSE_DEBUG -DGCQ_MAX_INSTANCES=16 $(DISTRO_FLAGS)
 
 all: clean
 	$(MAKE) -C ${KERNEL_DIR} M=${PWD} modules

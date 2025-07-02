@@ -39,7 +39,7 @@
  * @PF_DEV_STATE_INIT_ERROR: AMC setup and device may be used but with no data.
  * @PF_DEV_STATE_SHUTDOWN: All services have been shutdown.
  * @PF_DEV_STATE_COMPAT: Compatibility mode - most functions unavailable.
- * 
+ *
  * Note that, currently, PF_DEV_STATE_INIT is only used temporarily within
  * the device probe function so a user is unlikely to ever see this state.
  */
@@ -175,7 +175,7 @@ int add_pf_dev_app(struct pf_dev_struct *pf_dev, struct task_struct *task);
  * delete_pf_dev_app() - Remove a user application from a device.
  * @pf_dev: The device handle.
  * @task: The task struct this application belongs to.
- * 
+ *
  * If the application does not exist, this function does nothing and
  * returns success.
  *
@@ -195,11 +195,18 @@ struct pf_dev_struct *get_pf_dev_entry(void *cache, enum pf_dev_cache_type cache
 /**
  * put_pf_dev_entry() - Decrement the reference count of a pf_dev_struct
  * @pf_dev: Pointer to data struct.
- * 
+ *
  * If this is the last pointer reference, all device data will be deleted.
  *
  * Return: None
  */
 void put_pf_dev_entry(struct pf_dev_struct *pf_dev);
+
+// Definition of distribution detection macros
+#ifdef DISTRO_UBUNTU
+    #define IS_UBUNTU 1
+#elif DISTRO_ALMALINUX
+    #define IS_ALMALINUX 1
+#endif
 
 #endif /* AMI_TOP_H */

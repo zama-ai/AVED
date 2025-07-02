@@ -992,7 +992,7 @@ static ssize_t ami_debug_enabled_store(struct device_driver *drv, const char *bu
     if (count > AMI_DEBUG_INPUT_LIMIT)
         return -EINVAL;
 
-    sscanf(buf, "%hhd", &set_output_status);
+    sscanf(buf, "%d", &set_output_status);
     ami_debug_enabled = set_output_status;
 
     return count;
