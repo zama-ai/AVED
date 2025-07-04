@@ -1025,9 +1025,9 @@ int amc_proxy_close(const FW_IF_CFG *fw_if_handle)
 
                                 /* Remove from list and free the memory */
                                 list_del(&amc_ctxt->list);
+                                amc_ctxt->inst.initialised = false;
                                 kfree(amc_ctxt);
 
-                                amc_ctxt->inst.initialised = false;
                                 break;
                         }
                 }
