@@ -38,6 +38,7 @@ $(TARGET_MODULE)-objs += amc_proxy.o
 $(TARGET_MODULE)-objs += ami_log.o
 $(TARGET_MODULE)-objs += ami_peekpoke.o
 $(TARGET_MODULE)-objs += ami_iop_push.o
+$(TARGET_MODULE)-objs += ami_iop_ack_proc.o
 $(TARGET_MODULE)-objs += fal/gcq/fw_if_gcq_linux.o
 $(TARGET_MODULE)-objs += gcq-driver/src/gcq_driver.o
 $(TARGET_MODULE)-objs += gcq-driver/src/gcq_hw.o
