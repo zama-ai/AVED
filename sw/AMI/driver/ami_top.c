@@ -912,7 +912,7 @@ int __init vmc_entry(void)
     if (ret)
         goto remove_version_attr;
 
-    PR_INFO("Successfully loaded driver to the kernel");
+    PR_INFO("Successfully loaded driver v%s to the kernel", MDL_VERSION);
     ami_debug_enabled = false;
     return SUCCESS;
 
@@ -952,7 +952,7 @@ void __exit vmc_exit(void)
     pci_unregister_driver(&pcie_driver_core);
     unregister_driver_kernel();
 
-    PR_INFO("Successfully removed driver");
+    PR_INFO("Successfully removed driver v%s", MDL_VERSION);
 }
 
 module_init(vmc_entry);
