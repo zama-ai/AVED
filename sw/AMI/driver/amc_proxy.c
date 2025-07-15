@@ -770,6 +770,10 @@ static int complete_response_thread(void *data)
         uint32_t *iop_ack_table;
         uint32_t iop_ack_table_size;
         uint32_t cdev_num;
+        struct   pci_dev *dev;
+        struct   pf_dev_struct *pf_dev;
+        ack_proc_file *currentAckProcFile;
+        atomic_t      *iop_ack_cnt_atomic;
 
         if (!data) {
                 PR_ERR("Response thread null data arg");
@@ -806,16 +810,16 @@ static int complete_response_thread(void *data)
                 if (ackq_used_words > 0) {
                         PR_DBG("Ack queue: head 0x%x tail 0x%x -> {used %d}", ackq_head, ackq_tail, ackq_used_words);
 
-                        struct pci_dev *dev = amc_proxy_inst->amc_ctrl_ctxt->pcie_dev;
-                        struct pf_dev_struct *pf_dev = pci_get_drvdata(dev);
+                        dev = amc_proxy_inst->amc_ctrl_ctxt->pcie_dev;
+                        pf_dev = pci_get_drvdata(dev);
                         cdev_num = MINOR(pf_dev->cdev.cdev_num);
                         PR_DBG("Ack queue from device %d", cdev_num);
-                        ack_proc_file* currentAckProcFile = find_ack_proc_file_by_cdevn(cdev_num);
+                        currentAckProcFile = find_ack_proc_file_by_cdevn(cdev_num);
                         if (currentAckProcFile == NULL) {
                           PR_ERR("Ack file corresponding to cdev %d not found", cdev_num);
                           continue;
                         }
-                        atomic_t *iop_ack_cnt_atomic = &(currentAckProcFile->iop_ack_cnt_atomic);
+                        iop_ack_cnt_atomic = &(currentAckProcFile->iop_ack_cnt_atomic);
 
                         // Allocate Ackq Buffer
                         iopAck = kzalloc(ackq_used_words * sizeof(uint32_t), GFP_KERNEL);

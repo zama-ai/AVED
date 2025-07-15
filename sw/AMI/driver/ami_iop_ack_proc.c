@@ -22,13 +22,16 @@ static ssize_t ami_output(struct file *file, /* see include/linux/fs.h   */
     int i,cnt=0;
     int iop_ack_read;
     char output_msg[MESSAGE_LENGTH + 30];
+    ack_proc_file *read_apf=NULL;
+    atomic_t *iop_ack_cnt_atomic;
 
-    ack_proc_file *read_apf = find_ack_proc_file_by_file(file); 
+
+    read_apf = find_ack_proc_file_by_file(file);
     if (read_apf == NULL) {
         PR_ERR("Ack file corresponding to file* %p not found", file);
         return 0;
     }
-    atomic_t *iop_ack_cnt_atomic = &(read_apf->iop_ack_cnt_atomic);
+    iop_ack_cnt_atomic = &(read_apf->iop_ack_cnt_atomic);
 
 
     if (atomic_read(iop_ack_cnt_atomic)) {
@@ -141,6 +144,7 @@ int create_proc_file(unsigned dev_index)
 {
     char proc_filename[20];
     struct proc_dir_entry *ami_proc_file = NULL;
+    ack_proc_file *new_ack_proc_file;
 
     snprintf(proc_filename,20,"%s_%d",PROC_ENTRY_FILENAME, dev_index);
 
@@ -152,7 +156,7 @@ int create_proc_file(unsigned dev_index)
     proc_set_size(ami_proc_file, 80);
     proc_set_user(ami_proc_file, GLOBAL_ROOT_UID, GLOBAL_ROOT_GID);
 
-    ack_proc_file *new_ack_proc_file = kzalloc(sizeof(struct ack_proc_file), GFP_KERNEL);
+    new_ack_proc_file = kzalloc(sizeof(struct ack_proc_file), GFP_KERNEL);
     new_ack_proc_file->minor_cdev_number = dev_index;
     new_ack_proc_file->ami_proc_file = ami_proc_file;
     atomic_set(&new_ack_proc_file->iop_ack_cnt_atomic, 0);

@@ -7,6 +7,7 @@
 #ifndef AMI_IOP_ACK_PROC_H
 #define AMI_IOP_ACK_PROC_H
 
+#include <linux/module.h>
 #include <linux/types.h>
 #include <linux/proc_fs.h>
 
