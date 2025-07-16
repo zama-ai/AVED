@@ -354,6 +354,7 @@ fail:
 int pcie_device_probe(struct pci_dev *dev, const struct pci_device_id *id)
 {
     int ret = SUCCESS;
+    struct pf_dev_struct *pf_dev = NULL;
 
     if (!dev || !id)
         return -EINVAL;
@@ -377,7 +378,11 @@ int pcie_device_probe(struct pci_dev *dev, const struct pci_device_id *id)
 
     ret = create_pf_dev_data(dev);
 
-    struct pf_dev_struct *pf_dev = pci_get_drvdata(dev);
+    pf_dev = pci_get_drvdata(dev);
+    if (pf_dev == NULL) {
+        DEV_ERR(dev, "PCIE device enable failed, could not get driver data");
+        return -EINVAL;
+    }
 
     // create /proc file for IOp iop ack
     ret = create_proc_file(MINOR(pf_dev->cdev.cdev_num));
@@ -463,6 +468,7 @@ void delete_pf_dev_data(struct pf_dev_struct *pf_dev, bool delete_managed)
 void pcie_device_remove(struct pci_dev *dev)
 {
     struct pf_dev_struct *pf_dev = NULL;
+    int ret = 0;
 
     if (!dev)
         return;
@@ -485,8 +491,16 @@ void pcie_device_remove(struct pci_dev *dev)
 
     pci_disable_device(dev);                        /* Disable bus mastering regardless of the refcount */
     kill_pf_dev_apps(pf_dev, SIGBUS);               /* Kill any applications that may still be running */
-    down_interruptible(&pf_dev->remove_sema);       /* Wait until the refcount reaches 0 */
-    delete_proc_file(MINOR(pf_dev->cdev.cdev_num));
+    ret = down_interruptible(&pf_dev->remove_sema);       /* Wait until the refcount reaches 0 */
+    if (ret != 0) {
+        DEV_ERR(dev, "Removing PCIe device: wait on semaphore interrupted... stop there");
+        return;
+    }
+    ret = delete_proc_file(MINOR(pf_dev->cdev.cdev_num));
+    if (ret != 0) {
+        DEV_ERR(dev, "Removing PCIe device: could not remove /proc/ami_iop_ack_%d", pf_dev->cdev.cdev_num);
+        return;
+    }
     delete_pf_dev_data(pf_dev, false);              /* Safe to delete data */
     DEV_INFO(dev, "Successfully removed PCIe device");
 }

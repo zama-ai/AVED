@@ -811,7 +811,15 @@ static int complete_response_thread(void *data)
                         PR_DBG("Ack queue: head 0x%x tail 0x%x -> {used %d}", ackq_head, ackq_tail, ackq_used_words);
 
                         dev = amc_proxy_inst->amc_ctrl_ctxt->pcie_dev;
+                        if (dev == NULL) {
+                          PR_ERR("complete_response_thread: PCIe device associated with amc_proxy is invalid");
+                          break;
+                        }
                         pf_dev = pci_get_drvdata(dev);
+                        if (pf_dev == NULL) {
+                          PR_ERR("complete_response_thread: Could not get driver data associated with PCIe device");
+                          break;
+                        }
                         cdev_num = MINOR(pf_dev->cdev.cdev_num);
                         PR_DBG("Ack queue from device %d", cdev_num);
                         currentAckProcFile = find_ack_proc_file_by_cdevn(cdev_num);
