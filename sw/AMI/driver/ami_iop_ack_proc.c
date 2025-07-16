@@ -7,6 +7,8 @@
 #include "ami_top.h"
 #include "ami_iop_ack_proc.h"
 
+#define PROC_FILENAME_MAXLENGTH 20
+
 static ack_proc_file *ack_proc_file_list = NULL;
 /* Queue of processes who want data */
 DECLARE_WAIT_QUEUE_HEAD(wait_iop_q);
@@ -14,8 +16,7 @@ DECLARE_WAIT_QUEUE_HEAD(wait_iop_q);
 static DECLARE_WAIT_QUEUE_HEAD(waitq);
 
 static ssize_t ami_output(struct file *file, /* see include/linux/fs.h   */
-                          char __user *buf, /* The buffer to put data to
-                                                (in the user segment)    */
+                          char __user *buf, /* The buffer to put data into the user segment */
                           size_t len, /* The length of the buffer */
                           loff_t *offset)
 {
@@ -142,11 +143,11 @@ static const struct proc_ops file_ops_4_ami_proc_file = {
 
 int create_proc_file(unsigned dev_index)
 {
-    char proc_filename[20];
+    char proc_filename[PROC_FILENAME_MAXLENGTH];
     struct proc_dir_entry *ami_proc_file = NULL;
     ack_proc_file *new_ack_proc_file;
 
-    snprintf(proc_filename,20,"%s_%d",PROC_ENTRY_FILENAME, dev_index);
+    snprintf(proc_filename,PROC_FILENAME_MAXLENGTH,"%s_%d",PROC_ENTRY_FILENAME, dev_index);
 
     ami_proc_file = proc_create(proc_filename, 0777, NULL, &file_ops_4_ami_proc_file);
     if (ami_proc_file == NULL) {
@@ -248,14 +249,14 @@ ack_proc_file* find_ack_proc_file_by_file(struct file *file) {
 
 int delete_proc_file(unsigned dev_index)
 {
-    char proc_filename[20];
+    char proc_filename[PROC_FILENAME_MAXLENGTH];
 
     if (remove_ack_proc_file_by_cdevn(dev_index)) {
       // the proc file to delete has not been found
       return 1;
     }
 
-    snprintf(proc_filename,20,"%s_%d",PROC_ENTRY_FILENAME, dev_index);
+    snprintf(proc_filename,PROC_FILENAME_MAXLENGTH,"%s_%d",PROC_ENTRY_FILENAME, dev_index);
 
     remove_proc_entry(proc_filename, NULL);
     PR_DBG("/proc/%s removed\n", proc_filename);
