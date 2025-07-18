@@ -54,7 +54,7 @@ static int ami_open(struct inode *inode, struct file *file)
 
     ack_proc_file *open_apf = find_ack_proc_file_by_file(file);
     if (open_apf == NULL) {
-        PR_ERR("ami_open: Ack file corresponding to file* %p not found");
+        PR_ERR("ami_open: Ack file corresponding to file* %p not found", file);
         return -EAGAIN;
     }
     atomic_t *pde_in_use = &(open_apf->in_use);
@@ -120,7 +120,7 @@ static int ami_close(struct inode *inode, struct file *file)
 {
     ack_proc_file *open_apf = find_ack_proc_file_by_file(file);
     if (open_apf == NULL) {
-        PR_ERR("ami_close: Ack file corresponding to file* %p not found");
+        PR_ERR("ami_close: Ack file corresponding to file* %p not found", file);
         return -EAGAIN;
     }
     atomic_t *pde_in_use = &(open_apf->in_use);
@@ -262,8 +262,8 @@ int delete_proc_file(unsigned dev_index)
     char proc_filename[PROC_FILENAME_MAXLENGTH];
 
     if (remove_ack_proc_file_by_cdevn(dev_index)) {
-      // the proc file to delete has not been found
-      return 1;
+        // the proc file to delete has not been found
+        return 1;
     }
 
     snprintf(proc_filename,PROC_FILENAME_MAXLENGTH,"%s_%d",PROC_ENTRY_FILENAME, dev_index);
