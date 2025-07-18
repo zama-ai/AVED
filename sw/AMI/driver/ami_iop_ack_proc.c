@@ -29,7 +29,7 @@ static ssize_t ami_output(struct file *file, /* see include/linux/fs.h   */
 
     read_apf = find_ack_proc_file_by_file(file);
     if (read_apf == NULL) {
-        PR_ERR("Ack file corresponding to file* %p not found", file);
+        PR_ERR("ami_ouput: Ack file corresponding to file* %p not found", file);
         return 0;
     }
     iop_ack_cnt_atomic = &(read_apf->iop_ack_cnt_atomic);
@@ -53,6 +53,10 @@ static int ami_open(struct inode *inode, struct file *file)
 {
 
     ack_proc_file *open_apf = find_ack_proc_file_by_file(file);
+    if (open_apf == NULL) {
+        PR_ERR("ami_open: Ack file corresponding to file* %p not found");
+        return -EAGAIN;
+    }
     atomic_t *pde_in_use = &(open_apf->in_use);
 
     /* Try to get without blocking  */
@@ -115,6 +119,10 @@ static int ami_open(struct inode *inode, struct file *file)
 static int ami_close(struct inode *inode, struct file *file)
 {
     ack_proc_file *open_apf = find_ack_proc_file_by_file(file);
+    if (open_apf == NULL) {
+        PR_ERR("ami_close: Ack file corresponding to file* %p not found");
+        return -EAGAIN;
+    }
     atomic_t *pde_in_use = &(open_apf->in_use);
     /* Set pde_in_use to zero, so one of the processes in the waitq will
      * be able to set pde_in_use back to one and to open the file. All
@@ -241,9 +249,11 @@ ack_proc_file* find_ack_proc_file_by_file(struct file *file) {
     sscanf_ret = sscanf(pathname, "/proc/ami_iop_ack_%d", &cdev_num);
     if (sscanf_ret != 1) {
         PR_ERR("Extraction of cdev_num failed from %s", pathname);
+        free_page((unsigned long)buf);
         return NULL;
     }
 
+    free_page((unsigned long)buf);
     return find_ack_proc_file_by_cdevn(cdev_num);
 }
 
