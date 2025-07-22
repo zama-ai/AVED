@@ -26,6 +26,10 @@ static ssize_t ami_output(struct file *file, /* see include/linux/fs.h   */
     ack_proc_file *read_apf=NULL;
     atomic_t *iop_ack_cnt_atomic;
 
+    if (file == NULL) {
+        PR_ERR("ami_ouput: file* %p is NULL", file);
+        return 0;
+    }
 
     read_apf = find_ack_proc_file_by_file(file);
     if (read_apf == NULL) {
@@ -51,8 +55,12 @@ static ssize_t ami_output(struct file *file, /* see include/linux/fs.h   */
 
 static int ami_open(struct inode *inode, struct file *file)
 {
-
-    ack_proc_file *open_apf = find_ack_proc_file_by_file(file);
+    ack_proc_file *open_apf = NULL;
+    if (file == NULL) {
+        PR_ERR("ami_open: file* %p is NULL", file);
+        return -EAGAIN;
+    }
+    open_apf = find_ack_proc_file_by_file(file);
     if (open_apf == NULL) {
         PR_ERR("ami_open: Ack file corresponding to file* %p not found", file);
         return -EAGAIN;
@@ -118,7 +126,12 @@ static int ami_open(struct inode *inode, struct file *file)
 
 static int ami_close(struct inode *inode, struct file *file)
 {
-    ack_proc_file *open_apf = find_ack_proc_file_by_file(file);
+    ack_proc_file *open_apf = NULL;
+    if (file == NULL) {
+        PR_ERR("ami_close: file* %p is NULL", file);
+        return -EAGAIN;
+    }
+    open_apf = find_ack_proc_file_by_file(file);
     if (open_apf == NULL) {
         PR_ERR("ami_close: Ack file corresponding to file* %p not found", file);
         return -EAGAIN;
@@ -159,7 +172,7 @@ int create_proc_file(unsigned dev_index)
 
     ami_proc_file = proc_create(proc_filename, 0777, NULL, &file_ops_4_ami_proc_file);
     if (ami_proc_file == NULL) {
-        PR_DBG("Error: Could not initialize /proc/%s", proc_filename);
+        PR_ERR("Error: Could not initialize /proc/%s", proc_filename);
         return -ENOMEM;
     }
     proc_set_size(ami_proc_file, 80);
@@ -227,33 +240,40 @@ ack_proc_file* find_ack_proc_file_by_cdevn(unsigned target_minor_cdev_number) {
         current_apf = current_apf->next;
     }
 
+    PR_ERR("find_ack_proc_file_by_cdevn not found");
     return NULL;
 }
 
 ack_proc_file* find_ack_proc_file_by_file(struct file *file) {
 
-    char *buf;
-    char *pathname;
+    struct dentry *dentry;
+    const char *pathname;
     unsigned cdev_num;
     int sscanf_ret;
 
-    buf = (char*)__get_free_page(GFP_KERNEL);
-    if (!buf) {
+    if (file == NULL) {
+        PR_ERR("find_ack_proc_file_by_file: file* %p is NULL", file);
         return NULL;
     }
-    pathname = d_path(&file->f_path, buf, PAGE_SIZE);
-    if (IS_ERR(pathname)) {
-        free_page((unsigned long)buf);
+    dentry = dget(file->f_path.dentry);
+    if (!dentry) {
+        PR_ERR("find_ack_proc_file_by_file: dentry is NULL for file* %p", file);
         return NULL;
     }
-    sscanf_ret = sscanf(pathname, "/proc/ami_iop_ack_%d", &cdev_num);
-    if (sscanf_ret != 1) {
-        PR_ERR("Extraction of cdev_num failed from %s", pathname);
-        free_page((unsigned long)buf);
+    pathname = dentry->d_name.name;
+    if (!pathname) {
+        PR_ERR("find_ack_proc_file_by_file: could not retrieve name of file* %p", file);
         return NULL;
     }
 
-    free_page((unsigned long)buf);
+    sscanf_ret = sscanf(pathname, "ami_iop_ack_%d", &cdev_num);
+    if (sscanf_ret != 1) {
+        PR_ERR("Extraction of cdev_num failed from %s", pathname);
+        dput(dentry);
+        return NULL;
+    }
+    dput(dentry);
+
     return find_ack_proc_file_by_cdevn(cdev_num);
 }
 
@@ -269,7 +289,7 @@ int delete_proc_file(unsigned dev_index)
     snprintf(proc_filename,PROC_FILENAME_MAXLENGTH,"%s_%d",PROC_ENTRY_FILENAME, dev_index);
 
     remove_proc_entry(proc_filename, NULL);
-    PR_DBG("/proc/%s removed\n", proc_filename);
+    PR_INFO("/proc/%s removed\n", proc_filename);
 
     return 0;
 }
