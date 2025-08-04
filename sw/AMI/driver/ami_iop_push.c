@@ -35,7 +35,7 @@ int iop_push(struct amc_control_ctxt *amc_ctrl_ctxt, uint8_t *buf, uint8_t buf_l
                   AMC_IOP_ADDR_HEAD);
     iopq_tail = ioread32(amc_ctrl_ctxt->gcq_payload_base_virt_addr +
                   AMC_IOP_ADDR_TAIL);
-    iopq_used_bytes = iopq_head -iopq_tail;
+    iopq_used_bytes = iopq_head - iopq_tail;
     iopq_free_bytes = AMC_IOP_MAX_BYTES + iopq_tail - iopq_head;
 
     PR_DBG("IOp queue push 0x%x: head 0x%x tail 0x%x -> {used %d, free %d}", buf_len, iopq_head, iopq_tail, iopq_used_bytes, iopq_free_bytes);

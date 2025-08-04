@@ -38,7 +38,7 @@
 #define AMC_IOP_ADDR_OFF                         (0x7000000)
 #define AMC_IOP_ADDR_HEAD                        (0x7000000)
 #define AMC_IOP_ADDR_DATA_START                  (0x7000004)
-#define AMC_IOP_ADDR_TAIL                        (0x7010004)
+#define AMC_IOP_ADDR_TAIL                        (0x7020000)
 #define AMC_IOP_MAX_BYTES                        (0x10000)
 
 // IOpAck queue pointer and size
