@@ -17,10 +17,8 @@
 #include "amc_proxy.h"
 #include "ami_amc_control.h"
 #include "ami_program.h"  /* Need some #defines from here */
+#include "ami_iop_ack_proc.h"
 
-extern uint32_t *global_iop_ack_table;
-extern uint32_t global_iop_ack_table_size;
-extern atomic_t iop_ack_cnt_atomic;
 extern wait_queue_head_t wait_iop_q;
 /*****************************************************************************/
 /* Defines                                                                   */
@@ -769,6 +767,13 @@ static int complete_response_thread(void *data)
         uint32_t chunk_idx;
         uint32_t chunk_size;
         uint32_t wrap_chunk_size;
+        uint32_t *iop_ack_table;
+        uint32_t iop_ack_table_size;
+        uint32_t cdev_num;
+        struct   pci_dev *dev;
+        struct   pf_dev_struct *pf_dev;
+        ack_proc_file *currentAckProcFile;
+        atomic_t      *iop_ack_cnt_atomic;
 
         if (!data) {
                 PR_ERR("Response thread null data arg");
@@ -804,10 +809,30 @@ static int complete_response_thread(void *data)
 
                 if (ackq_used_words > 0) {
                         PR_DBG("Ack queue: head 0x%x tail 0x%x -> {used %d}", ackq_head, ackq_tail, ackq_used_words);
+
+                        dev = amc_proxy_inst->amc_ctrl_ctxt->pcie_dev;
+                        if (dev == NULL) {
+                          PR_ERR("complete_response_thread: PCIe device associated with amc_proxy is invalid");
+                          break;
+                        }
+                        pf_dev = pci_get_drvdata(dev);
+                        if (pf_dev == NULL) {
+                          PR_ERR("complete_response_thread: Could not get driver data associated with PCIe device");
+                          break;
+                        }
+                        cdev_num = MINOR(pf_dev->cdev.cdev_num);
+                        PR_DBG("Ack queue from device %d", cdev_num);
+                        currentAckProcFile = find_ack_proc_file_by_cdevn(cdev_num);
+                        if (currentAckProcFile == NULL) {
+                          PR_ERR("Ack file corresponding to cdev %d not found", cdev_num);
+                          continue;
+                        }
+                        iop_ack_cnt_atomic = &(currentAckProcFile->iop_ack_cnt_atomic);
+
                         // Allocate Ackq Buffer
                         iopAck = kzalloc(ackq_used_words * sizeof(uint32_t), GFP_KERNEL);
-                        global_iop_ack_table = iopAck;
-                        global_iop_ack_table_size = ackq_used_words;
+                        iop_ack_table = iopAck;
+                        iop_ack_table_size = ackq_used_words;
 
                         // 2. Compute chunks index and size
                         chunk_idx = ackq_tail % AMC_IOPACK_MAX_WORDS;
@@ -825,11 +850,11 @@ static int complete_response_thread(void *data)
                                       (void __iomem *)(amc_proxy_inst->amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOPACK_ADDR_DATA_START),
                                       wrap_chunk_size * sizeof(uint32_t));
                         }
-                        for (i = 0; i < global_iop_ack_table_size; i++) {
-                            PR_DBG("iopAck[%d] = 0x%x", i, global_iop_ack_table[i]);
+                        for (i = 0; i < iop_ack_table_size; i++) {
+                            PR_DBG("iopAck[%d] = 0x%x", i, iop_ack_table[i]);
                         }
-                        atomic_add(global_iop_ack_table_size, &iop_ack_cnt_atomic);
-                        PR_DBG("Add %d to iop_ack_cnt_atomic to %d", global_iop_ack_table_size, atomic_read(&iop_ack_cnt_atomic));
+                        atomic_add(iop_ack_table_size, iop_ack_cnt_atomic);
+                        PR_DBG("Add %d to iop_ack_cnt_atomic to %d", iop_ack_table_size, atomic_read(iop_ack_cnt_atomic));
 
                         // Acknowledge queue consumption
                         ackq_tail += ackq_used_words;
@@ -1025,9 +1050,9 @@ int amc_proxy_close(const FW_IF_CFG *fw_if_handle)
 
                                 /* Remove from list and free the memory */
                                 list_del(&amc_ctxt->list);
+                                amc_ctxt->inst.initialised = false;
                                 kfree(amc_ctxt);
 
-                                amc_ctxt->inst.initialised = false;
                                 break;
                         }
                 }
