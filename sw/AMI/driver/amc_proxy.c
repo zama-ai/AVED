@@ -869,7 +869,7 @@ static int complete_response_thread(void *data)
                         break;
                 }
 
-                usleep_range(1000, 2000);
+                usleep_range(10, 20);
         }
 
         /* Return will be passed to kthread_stop() */
