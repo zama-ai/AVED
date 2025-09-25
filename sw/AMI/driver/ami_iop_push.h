@@ -14,7 +14,7 @@
 int iop_push(
     struct amc_control_ctxt *amc_ctrl_ctxt,
     uint8_t *buf,
-    uint8_t  buf_len,
+    uint32_t  buf_len,
     uint32_t offset,
     bool     dop
 );

@@ -12,7 +12,7 @@
 #include "ami_iop_push.h"
 #include "ami_amc_control.h"
 
-int iop_push(struct amc_control_ctxt *amc_ctrl_ctxt, uint8_t *buf, uint8_t buf_len, uint32_t offset, bool dop) {
+int iop_push(struct amc_control_ctxt *amc_ctrl_ctxt, uint8_t *buf, uint32_t buf_len, uint32_t offset, bool dop) {
     int ret = SUCCESS;
     int i;
     uint32_t iopq_head = 0;
