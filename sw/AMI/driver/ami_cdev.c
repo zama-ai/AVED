@@ -14,6 +14,7 @@
 #include <linux/types.h>
 #include <linux/hwmon.h>
 #include <linux/eventfd.h>
+#include <linux/ktime.h>
 
 #include "ami.h"
 #include "ami_hwmon.h"
@@ -32,8 +33,9 @@
 #define READ_WRITE               (0666)
 #define IS_ROOT_USER(uid, euid)  (capable(CAP_DAC_OVERRIDE) || (uid == ROOT_USER) || (euid == ROOT_USER))
 
-
 static int dev_major = 0;  /* This will be overridden. */
+
+extern ktime_t start_time;
 
 
 /**
@@ -664,6 +666,8 @@ long dev_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
     {
         struct ami_ioc_iop_push_payload data = { 0 };
         uint8_t *buf = NULL;
+
+        start_time = ktime_get();
 
         /* Read data payload. */
         if (copy_from_user(&data, (struct ami_ioc_iop_push_payload*)arg, sizeof(data))) {

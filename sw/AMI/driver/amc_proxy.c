@@ -20,6 +20,9 @@
 #include "ami_iop_ack_proc.h"
 
 extern wait_queue_head_t wait_iop_q;
+
+extern ktime_t end_time;
+extern ktime_t start_time;
 /*****************************************************************************/
 /* Defines                                                                   */
 /*****************************************************************************/
@@ -808,6 +811,10 @@ static int complete_response_thread(void *data)
                 ackq_used_words = ackq_head - ackq_tail;
 
                 if (ackq_used_words > 0) {
+                        end_time = ktime_get();
+                        ktime_t duration = ktime_sub(end_time, start_time);
+                        long long duration_ns = ktime_to_ns(duration);
+                        PR_ERR("push to ack took %lld ns", duration_ns);
                         PR_DBG("Ack queue: head 0x%x tail 0x%x -> {used %d}", ackq_head, ackq_tail, ackq_used_words);
 
                         dev = amc_proxy_inst->amc_ctrl_ctxt->pcie_dev;

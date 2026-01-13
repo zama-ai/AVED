@@ -54,6 +54,9 @@ static FW_IF_GCQ_INIT_CFG fw_if_gcq_init_cfg = { 0 };
 /* Declared as extern in ami.h */
 bool ami_debug_enabled = true;
 
+ktime_t start_time;
+ktime_t end_time;
+
 /*
  * We need a global device mutex to fetch/delete device handles in situations
  * where we do not already hold a valid device pointer. This can't be embedded

@@ -4,6 +4,7 @@
  *
  */
 
+#include "ami.h"
 #include "ami_top.h"
 #include "ami_iop_ack_proc.h"
 

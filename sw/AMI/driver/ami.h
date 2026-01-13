@@ -9,6 +9,8 @@
 #define AMI_DRIVER_H
 
 #include <linux/printk.h>
+#include <linux/ktime.h>
+#include <linux/timekeeping.h>
 
 /* Meta Information */
 #define MDL_VERSION     "3.1.0-zama"
@@ -19,6 +21,7 @@
 
 /* Enables debug messages in dmesg */
 extern bool ami_debug_enabled;
+
 
 #undef pr_fmt
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
