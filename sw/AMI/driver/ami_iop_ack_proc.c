@@ -155,9 +155,35 @@ static int ami_close(struct inode *inode, struct file *file)
     return 0; /* success */
 }
 
+static int ami_mmap(struct file *file, struct vm_area_struct *vma) {
+    unsigned long pfn;
+    ack_proc_file *read_apf=NULL;
+
+    if (file == NULL) {
+        PR_ERR("ami_ouput: file* %p is NULL", file);
+        return 0;
+    }
+
+    read_apf = find_ack_proc_file_by_file(file);
+    if (read_apf == NULL) {
+        PR_ERR("ami_ouput: Ack file corresponding to file* %p not found", file);
+        return 0;
+    }
+    // Get Physical Frame Number (PFN) of our allocated page
+    pfn = virt_to_phys(read_apf) >> PAGE_SHIFT;
+    // Map it to user space
+    if (remap_pfn_range(vma, vma->vm_start, pfn,
+                        PAGE_SIZE, vma->vm_page_prot)) {
+        return -EAGAIN;
+    }
+
+    return 0;
+}
+
 static const struct proc_ops file_ops_4_ami_proc_file = {
     .proc_read = ami_output, /* "read" from the file */
     .proc_write = NULL, /* "write" to the file */
+    .proc_mmap = ami_mmap,
     .proc_open = ami_open, /* called when the /proc file is opened */
     .proc_release = ami_close, /* called when it's closed */
     .proc_lseek = noop_llseek, /* return file->f_pos */
@@ -179,7 +205,8 @@ int create_proc_file(unsigned dev_index)
     proc_set_size(ami_proc_file, 80);
     proc_set_user(ami_proc_file, GLOBAL_ROOT_UID, GLOBAL_ROOT_GID);
 
-    new_ack_proc_file = kzalloc(sizeof(struct ack_proc_file), GFP_KERNEL);
+    unsigned long page_addr = get_zeroed_page(GFP_KERNEL);
+    new_ack_proc_file = (ack_proc_file*) page_addr;
     new_ack_proc_file->minor_cdev_number = dev_index;
     new_ack_proc_file->ami_proc_file = ami_proc_file;
     atomic_set(&new_ack_proc_file->iop_ack_cnt_atomic, 0);

@@ -20,9 +20,9 @@
 #define MESSAGE_LENGTH 80
 
 typedef struct ack_proc_file {
+    atomic_t               iop_ack_cnt_atomic;
     unsigned int           minor_cdev_number;
     struct proc_dir_entry *ami_proc_file;
-    atomic_t               iop_ack_cnt_atomic;
     atomic_t               in_use;
     struct ack_proc_file  *next;
 } ack_proc_file;
