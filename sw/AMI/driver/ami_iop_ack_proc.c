@@ -10,8 +10,6 @@
 #define PROC_FILENAME_MAXLENGTH 20
 
 static ack_proc_file *ack_proc_file_list = NULL;
-/* Queue of processes who want data */
-DECLARE_WAIT_QUEUE_HEAD(wait_iop_q);
 /* Queue of processes who want our file */
 static DECLARE_WAIT_QUEUE_HEAD(waitq);
 

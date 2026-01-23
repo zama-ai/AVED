@@ -11,7 +11,7 @@
 #include <linux/printk.h>
 
 /* Meta Information */
-#define MDL_VERSION     "3.1.0-zama"
+#define MDL_VERSION     "3.2.0-zama"
 #define MDL_DESCRIPTION "AVED Management Interface (AMI) is used to manage AVED-based devices through PCIe"
 #define MDL_AUTHOR      "AMD, Inc."
 #define MDL_RELDATE     "2023"
