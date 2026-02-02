@@ -241,6 +241,9 @@ unsigned remove_ack_proc_file_by_cdevn(unsigned target_minor_cdev_number) {
                 prev_apf->next = current_apf->next;
             }
 
+            if (current_apf->ami_proc_file) {
+                proc_remove(current_apf->ami_proc_file);
+            }
             PR_INFO("Removed /proc node with minor_cdev_number: %u", current_apf->minor_cdev_number);
             kfree(current_apf);
             return 0;
@@ -304,17 +307,10 @@ ack_proc_file* find_ack_proc_file_by_file(struct file *file) {
 
 int delete_proc_file(unsigned dev_index)
 {
-    char proc_filename[PROC_FILENAME_MAXLENGTH];
-
     if (remove_ack_proc_file_by_cdevn(dev_index)) {
         // the proc file to delete has not been found
         return 1;
     }
-
-    snprintf(proc_filename,PROC_FILENAME_MAXLENGTH,"%s_%d",PROC_ENTRY_FILENAME, dev_index);
-
-    remove_proc_entry(proc_filename, NULL);
-    PR_INFO("/proc/%s removed\n", proc_filename);
 
     return 0;
 }
