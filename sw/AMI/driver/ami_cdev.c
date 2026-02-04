@@ -86,6 +86,43 @@ int dev_close(struct inode *inode, struct file *filp)
     return 0;
 }
 
+int dev_mmap(struct file *filp, struct vm_area_struct *vma)
+{
+    struct pf_dev_struct *pf_dev = NULL;
+
+    pf_dev = filp->private_data;
+
+    /* Check device data */
+    if (!pf_dev) {
+        PR_ERR("dev_unlocked_ioctl: unable to find card");
+        return -ENODEV;
+    }
+    // 1. Get the physical address of BAR0 (stored in your pdev struct)
+    unsigned long phys_addr = pci_resource_start(pf_dev->pci, 0);
+    unsigned long size = vma->vm_end - vma->vm_start;
+
+    PR_INFO("mmap BAR0 phys_addr 0x%lx size 0x%lx on 0x%lx", phys_addr, size, vma->vm_start);
+
+    // 2. Safety Check: Ensure user isn't asking for more than the BAR size
+    unsigned long bar_len = pci_resource_len(pf_dev->pci, 0);
+    if (size > bar_len) {
+        return -EINVAL;
+    }
+
+    // 3. Mark the memory as "uncached" (Crucial for hardware registers!)
+    vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+
+    if (remap_pfn_range(vma,
+                        vma->vm_start,           // User virtual address start
+                        phys_addr >> PAGE_SHIFT, // Physical PFN (addr / 4096)
+                        size,                    // Size
+                        vma->vm_page_prot)) {    // Protection flags
+        return -EAGAIN;
+    }
+
+    return 0;
+}
+
 /*
  * This function will be called when we use IOCTL with command on the Device file
  */

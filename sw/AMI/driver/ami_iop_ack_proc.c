@@ -243,6 +243,7 @@ unsigned remove_ack_proc_file_by_cdevn(unsigned target_minor_cdev_number) {
 
             if (current_apf->ami_proc_file) {
                 proc_remove(current_apf->ami_proc_file);
+                current_apf->ami_proc_file = NULL;
             }
             PR_INFO("Removed /proc node with minor_cdev_number: %u", current_apf->minor_cdev_number);
             kfree(current_apf);
