@@ -56,8 +56,11 @@ void dump_amc_log(struct amc_control_ctxt *amc_ctrl_ctxt)
 
 		memcpy_fromio(&msg, (void*)log_msg_addr, sizeof(struct amc_msg_payload));
 
-		if(strchr(msg.buff, '\0') && strlen(msg.buff))
-			AMI_AMC_LOG(amc_ctrl_ctxt, "%s", msg.buff);
+                size_t safe_len = strnlen(msg.buff, sizeof(msg.buff));
+                msg.buff[sizeof(msg.buff) - 1] = '\0';
+
+		if (safe_len > 0)
+		        AMI_AMC_LOG(amc_ctrl_ctxt, "%s", msg.buff);
 
 		i = (i + 1) % AMC_LOG_MAX_RECS;
 	}
