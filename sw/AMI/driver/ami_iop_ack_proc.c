@@ -157,17 +157,22 @@ static int ami_mmap(struct file *file, struct vm_area_struct *vma) {
     ack_proc_file *read_apf=NULL;
 
     if (file == NULL) {
-        PR_ERR("ami_ouput: file* %p is NULL", file);
-        return 0;
+        PR_ERR("ami_mmap: file* %p is NULL", file);
+        return -ENODEV;
     }
 
     read_apf = find_ack_proc_file_by_file(file);
     if (read_apf == NULL) {
-        PR_ERR("ami_ouput: Ack file corresponding to file* %p not found", file);
-        return 0;
+        PR_ERR("ami_mmap: Ack file corresponding to file* %p not found", file);
+        return -EINVAL;
     }
     // Get Physical Frame Number (PFN) of our allocated page
     pfn = virt_to_phys(read_apf) >> PAGE_SHIFT;
+
+    if ((vma->vm_end - vma->vm_start) > PAGE_SIZE) {
+        PR_ERR("ami_mmap: mmap request bigger than a PAGE_SIZE rejected");
+        return -EINVAL;
+    }
     // Map it to user space
     if (remap_pfn_range(vma, vma->vm_start, pfn,
                         PAGE_SIZE, vma->vm_page_prot)) {
@@ -246,7 +251,7 @@ unsigned remove_ack_proc_file_by_cdevn(unsigned target_minor_cdev_number) {
                 current_apf->ami_proc_file = NULL;
             }
             PR_INFO("Removed /proc node with minor_cdev_number: %u", current_apf->minor_cdev_number);
-            kfree(current_apf);
+            free_page((unsigned long)current_apf);
             return 0;
         }
 
