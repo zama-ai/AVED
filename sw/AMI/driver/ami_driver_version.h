@@ -5,10 +5,10 @@
 #ifndef _AMI_DRIVER_VERSION_H_
 #define _AMI_DRIVER_VERSION_H_
 
-#define GIT_TAG                   "3.2.0"
+#define GIT_TAG                   "3.1.1"
 #define GIT_TAG_VER_MAJOR         (3)
-#define GIT_TAG_VER_MINOR         (2)
-#define GIT_TAG_VER_PATCH         (0)
+#define GIT_TAG_VER_MINOR         (1)
+#define GIT_TAG_VER_PATCH         (1)
 #define GIT_TAG_VER_DEV_COMMITS   (0)
 
 #define GIT_HASH                  "0bab29e568f64a25f17425c0ffd1c0e89609b6d1"
