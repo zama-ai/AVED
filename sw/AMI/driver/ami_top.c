@@ -71,10 +71,11 @@ void pcie_device_remove(struct pci_dev *dev);
 int register_driver_pcie(void);
 
 static struct file_operations dev_fops = {
-    .owner        = THIS_MODULE,
-    .open        = dev_open,
-    .release    = dev_close,
+    .owner          = THIS_MODULE,
+    .open           = dev_open,
+    .release        = dev_close,
     .unlocked_ioctl = dev_unlocked_ioctl,
+    .mmap           = dev_mmap,
 };
 
 int register_driver_kernel(void)

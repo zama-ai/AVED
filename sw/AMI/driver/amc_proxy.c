@@ -19,7 +19,6 @@
 #include "ami_program.h"  /* Need some #defines from here */
 #include "ami_iop_ack_proc.h"
 
-extern wait_queue_head_t wait_iop_q;
 /*****************************************************************************/
 /* Defines                                                                   */
 /*****************************************************************************/
@@ -854,14 +853,12 @@ static int complete_response_thread(void *data)
                             PR_DBG("iopAck[%d] = 0x%x", i, iop_ack_table[i]);
                         }
                         atomic_add(iop_ack_table_size, iop_ack_cnt_atomic);
-                        PR_DBG("Add %d to iop_ack_cnt_atomic to %d", iop_ack_table_size, atomic_read(iop_ack_cnt_atomic));
 
                         // Acknowledge queue consumption
                         ackq_tail += ackq_used_words;
                         iowrite32(ackq_tail, amc_proxy_inst->amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOPACK_ADDR_TAIL);
-                        // signaling ami_top that waiting reader can be woken
-                        wake_up(&wait_iop_q);
                         kfree(iopAck);
+                        PR_INFO("added %d to iop_ack_cnt_atomic of device %d", iop_ack_table_size, cdev_num);
                 }
 
                 /* Check if a stop has been requested */

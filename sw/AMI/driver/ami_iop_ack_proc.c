@@ -10,8 +10,6 @@
 #define PROC_FILENAME_MAXLENGTH 20
 
 static ack_proc_file *ack_proc_file_list = NULL;
-/* Queue of processes who want data */
-DECLARE_WAIT_QUEUE_HEAD(wait_iop_q);
 /* Queue of processes who want our file */
 static DECLARE_WAIT_QUEUE_HEAD(waitq);
 
@@ -154,9 +152,40 @@ static int ami_close(struct inode *inode, struct file *file)
     return 0; /* success */
 }
 
+static int ami_mmap(struct file *file, struct vm_area_struct *vma) {
+    unsigned long pfn;
+    ack_proc_file *read_apf=NULL;
+
+    if (file == NULL) {
+        PR_ERR("ami_mmap: file* %p is NULL", file);
+        return -ENODEV;
+    }
+
+    read_apf = find_ack_proc_file_by_file(file);
+    if (read_apf == NULL) {
+        PR_ERR("ami_mmap: Ack file corresponding to file* %p not found", file);
+        return -EINVAL;
+    }
+    // Get Physical Frame Number (PFN) of our allocated page
+    pfn = virt_to_phys(read_apf) >> PAGE_SHIFT;
+
+    if ((vma->vm_end - vma->vm_start) > PAGE_SIZE) {
+        PR_ERR("ami_mmap: mmap request bigger than a page rejected");
+        return -EINVAL;
+    }
+    // Map it to user space
+    if (remap_pfn_range(vma, vma->vm_start, pfn,
+                        PAGE_SIZE, vma->vm_page_prot)) {
+        return -EAGAIN;
+    }
+
+    return 0;
+}
+
 static const struct proc_ops file_ops_4_ami_proc_file = {
     .proc_read = ami_output, /* "read" from the file */
     .proc_write = NULL, /* "write" to the file */
+    .proc_mmap = ami_mmap,
     .proc_open = ami_open, /* called when the /proc file is opened */
     .proc_release = ami_close, /* called when it's closed */
     .proc_lseek = noop_llseek, /* return file->f_pos */
@@ -178,7 +207,8 @@ int create_proc_file(unsigned dev_index)
     proc_set_size(ami_proc_file, 80);
     proc_set_user(ami_proc_file, GLOBAL_ROOT_UID, GLOBAL_ROOT_GID);
 
-    new_ack_proc_file = kzalloc(sizeof(struct ack_proc_file), GFP_KERNEL);
+    unsigned long page_addr = get_zeroed_page(GFP_KERNEL);
+    new_ack_proc_file = (ack_proc_file*) page_addr;
     new_ack_proc_file->minor_cdev_number = dev_index;
     new_ack_proc_file->ami_proc_file = ami_proc_file;
     atomic_set(&new_ack_proc_file->iop_ack_cnt_atomic, 0);
@@ -216,8 +246,12 @@ unsigned remove_ack_proc_file_by_cdevn(unsigned target_minor_cdev_number) {
                 prev_apf->next = current_apf->next;
             }
 
+            if (current_apf->ami_proc_file) {
+                proc_remove(current_apf->ami_proc_file);
+                current_apf->ami_proc_file = NULL;
+            }
             PR_INFO("Removed /proc node with minor_cdev_number: %u", current_apf->minor_cdev_number);
-            kfree(current_apf);
+            free_page((unsigned long)current_apf);
             return 0;
         }
 
@@ -279,17 +313,10 @@ ack_proc_file* find_ack_proc_file_by_file(struct file *file) {
 
 int delete_proc_file(unsigned dev_index)
 {
-    char proc_filename[PROC_FILENAME_MAXLENGTH];
-
     if (remove_ack_proc_file_by_cdevn(dev_index)) {
         // the proc file to delete has not been found
         return 1;
     }
-
-    snprintf(proc_filename,PROC_FILENAME_MAXLENGTH,"%s_%d",PROC_ENTRY_FILENAME, dev_index);
-
-    remove_proc_entry(proc_filename, NULL);
-    PR_INFO("/proc/%s removed\n", proc_filename);
 
     return 0;
 }

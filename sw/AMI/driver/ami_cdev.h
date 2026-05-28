@@ -259,6 +259,7 @@ struct drv_cdev_struct {
 /* Standard Linux callbacks */
 int dev_open(struct inode *inode, struct file *filp);
 int dev_close(struct inode *inode, struct file *filp);
+int dev_mmap(struct file *filp, struct vm_area_struct *vma);
 long dev_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
 
 /**
