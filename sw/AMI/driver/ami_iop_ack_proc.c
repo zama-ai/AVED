@@ -170,7 +170,7 @@ static int ami_mmap(struct file *file, struct vm_area_struct *vma) {
     pfn = virt_to_phys(read_apf) >> PAGE_SHIFT;
 
     if ((vma->vm_end - vma->vm_start) > PAGE_SIZE) {
-        PR_ERR("ami_mmap: mmap request bigger than a PAGE_SIZE rejected");
+        PR_ERR("ami_mmap: mmap request bigger than a page rejected");
         return -EINVAL;
     }
     // Map it to user space
