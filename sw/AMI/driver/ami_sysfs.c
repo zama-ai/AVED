@@ -280,27 +280,31 @@ static DEVICE_ATTR_RO(dev_state);
  * Returns the current value of the firmware's status beacon (live read via BAR).
  * Bit decoding matches AMC_STATUS_* in ami_amc_control.h.
  */
-static ssize_t amc_status_flags_show(struct device		*dev,
-				     struct device_attribute	*da,
-				     char			*buf)
+static ssize_t amc_status_flags_show(struct device *dev,
+                                     struct device_attribute *da,
+                                     char *buf)
 {
-	int ret = 0;
-	struct pf_dev_struct *pf_dev = NULL;
-	uint32_t flags = 0;
+  int ret = 0;
+  struct pf_dev_struct *pf_dev = NULL;
+  uint32_t flags = 0;
 
-	if (!dev || !da || !buf)
-		return -EINVAL;
+  if (!dev || !da || !buf)
+    return -EINVAL;
 
-	pf_dev = get_pf_dev_entry(dev, PF_DEV_CACHE_DEV);
-	if (!pf_dev)
-		return -ENODEV;
+  pf_dev = get_pf_dev_entry(dev, PF_DEV_CACHE_DEV);
+  if (!pf_dev)
+    return -ENODEV;
 
-	if (pf_dev->amc_ctrl_ctxt)
-		flags = read_amc_status_flags(pf_dev->amc_ctrl_ctxt);
+  //  Distinguish "live firmware wrote 0" from "we can't read it at all".
+  if (!pf_dev->amc_ctrl_ctxt || !pf_dev->amc_ctrl_ctxt->gcq_payload_base_virt_addr) {
+    put_pf_dev_entry(pf_dev);
+    return -ENODEV;
+  }
 
-	ret = sprintf(buf, "0x%08x\n", flags);
-	put_pf_dev_entry(pf_dev);
-	return ret;
+  flags = read_amc_status_flags(pf_dev->amc_ctrl_ctxt);
+  ret = sysfs_emit(buf, "0x%08x\n", flags);
+  put_pf_dev_entry(pf_dev);
+  return ret;
 }
 static DEVICE_ATTR_RO(amc_status_flags);
 

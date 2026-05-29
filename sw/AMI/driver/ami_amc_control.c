@@ -246,7 +246,6 @@ uint32_t read_amc_status_flags(struct amc_control_ctxt *amc_ctrl_ctxt)
         return 0;
 
     flags = ioread32(amc_ctrl_ctxt->gcq_payload_base_virt_addr + amc_ctrl_ctxt->amc_shared_mem.status.amc_status_off);
-    amc_ctrl_ctxt->amc_status_flags = flags;
     return flags;
 }
 
@@ -325,7 +324,6 @@ bool gcq_device_is_ready(struct amc_control_ctxt *amc_ctrl_ctxt)
                           amc_ctrl_ctxt->amc_shared_mem.status.amc_status_off);
 
             AMI_VDBG(amc_ctrl_ctxt, "Device status value : %x", amc_status);
-            amc_ctrl_ctxt->amc_status_flags = amc_status;
             if (amc_status) {
                 AMI_VDBG(amc_ctrl_ctxt,
                      "AMC GCQ service ready after %d ms",

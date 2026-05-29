@@ -709,7 +709,6 @@ struct amc_control_ctxt {
     bool                    logging_thread_created;
     int                     last_printed_msg_index;
     bool                    compat_mode;
-    uint32_t                amc_status_flags;   /* Snapshot of firmware status word from ready beacon. */
 };
 
 /* AMC status flag bits (mirror of firmware HAL_AMC_STATUS_*). */
@@ -722,7 +721,7 @@ struct amc_control_ctxt {
 
 /**
  * read_amc_status_flags() - Read the live firmware status word via BAR.
- * Returns the current value; also updates amc_ctrl_ctxt->amc_status_flags.
+ * Returns the current value, or 0 if the GCQ payload isn't mapped yet.
  */
 uint32_t read_amc_status_flags(struct amc_control_ctxt *amc_ctrl_ctxt);
 
