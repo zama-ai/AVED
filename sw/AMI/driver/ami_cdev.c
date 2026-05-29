@@ -187,7 +187,31 @@ long dev_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         }
         break;
 
-    /* READY or MISSING_INFO only */
+    /*
+     * Compute path: register access + work submission.
+     * READY, MISSING_INFO, or EEPROM_ERROR.
+     * EEPROM_ERROR: I2C/EEPROM is broken but BAR0 / GCQ / IOp queue all work.
+     */
+    case AMI_IOC_PEEK:
+    case AMI_IOC_POKE:
+    case AMI_IOC_IOP_PUSH:
+    case AMI_IOC_DEBUG_VERBOSITY:
+        switch (pf_dev->state) {
+        case PF_DEV_STATE_READY:
+        case PF_DEV_STATE_MISSING_INFO:
+        case PF_DEV_STATE_EEPROM_ERROR:
+            break;
+
+        default:
+            return -EPERM;
+        }
+        break;
+
+    /*
+     * Sensor / EEPROM / FPT access: requires healthy I2C and EEPROM.
+     * READY or MISSING_INFO only
+     * explicitly excludes EEPROM_ERROR so userspace gets immediate -EPERM instead of a deep firmware timeout.
+     */
     case AMI_IOC_GET_SENSOR_VALUE:
     case AMI_IOC_COPY_PARTITION:
     case AMI_IOC_SET_SENSOR_REFRESH:
@@ -195,12 +219,8 @@ long dev_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
     case AMI_IOC_GET_FPT_PARTITION:
     case AMI_IOC_READ_EEPROM:
     case AMI_IOC_WRITE_EEPROM:
-    case AMI_IOC_PEEK:
-    case AMI_IOC_IOP_PUSH:
-    case AMI_IOC_POKE:
     case AMI_IOC_READ_MODULE:
     case AMI_IOC_WRITE_MODULE:
-    case AMI_IOC_DEBUG_VERBOSITY:
         switch (pf_dev->state) {
         case PF_DEV_STATE_READY:
         case PF_DEV_STATE_MISSING_INFO:

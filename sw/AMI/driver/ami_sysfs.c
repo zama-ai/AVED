@@ -37,6 +37,7 @@ static const struct dev_state_map state_names[] = {
 	{ PF_DEV_STATE_MISSING_INFO, STATE_NAME_MISSING_INFO },
 	{ PF_DEV_STATE_NO_AMC,	     STATE_NAME_NO_AMC	     },
 	{ PF_DEV_STATE_INIT_ERROR,   STATE_NAME_INIT_ERROR   },
+	{ PF_DEV_STATE_EEPROM_ERROR, STATE_NAME_EEPROM_ERROR },
 	{ PF_DEV_STATE_SHUTDOWN,     STATE_NAME_SHUTDOWN     },
 	{ PF_DEV_STATE_COMPAT,	     STATE_NAME_COMPAT	     },
 };
@@ -272,6 +273,36 @@ static ssize_t dev_state_show(struct device		*dev,
 	return ret;
 }
 static DEVICE_ATTR_RO(dev_state);
+
+/**
+ * amc_status_flags_show() - Sysfs read callback exposing firmware status word.
+ *
+ * Returns the current value of the firmware's status beacon (live read via BAR).
+ * Bit decoding matches AMC_STATUS_* in ami_amc_control.h.
+ */
+static ssize_t amc_status_flags_show(struct device		*dev,
+				     struct device_attribute	*da,
+				     char			*buf)
+{
+	int ret = 0;
+	struct pf_dev_struct *pf_dev = NULL;
+	uint32_t flags = 0;
+
+	if (!dev || !da || !buf)
+		return -EINVAL;
+
+	pf_dev = get_pf_dev_entry(dev, PF_DEV_CACHE_DEV);
+	if (!pf_dev)
+		return -ENODEV;
+
+	if (pf_dev->amc_ctrl_ctxt)
+		flags = read_amc_status_flags(pf_dev->amc_ctrl_ctxt);
+
+	ret = sprintf(buf, "0x%08x\n", flags);
+	put_pf_dev_entry(pf_dev);
+	return ret;
+}
+static DEVICE_ATTR_RO(amc_status_flags);
 
 /**
  * dev_name_show() - Sysfs read callback for 'dev_name' attribute.
@@ -768,6 +799,7 @@ static const struct device_attribute *mgmt_attrs[] = {
 	&dev_attr_link_width_max,
 	&dev_attr_link_width_current,
 	&dev_attr_dev_state,
+	&dev_attr_amc_status_flags,
 	&dev_attr_dev_name,
 	&dev_attr_amc_version,
 

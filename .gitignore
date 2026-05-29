@@ -6,6 +6,7 @@
 *.elf
 *.d
 *.cmd
+*.mod
 
 #includes specifics for perforce + any other non public
 output/

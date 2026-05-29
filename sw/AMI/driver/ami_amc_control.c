@@ -238,6 +238,18 @@ int get_aid(int cmd_req, int flags)
     return id;
 }
 
+uint32_t read_amc_status_flags(struct amc_control_ctxt *amc_ctrl_ctxt)
+{
+    uint32_t flags = 0;
+
+    if (!amc_ctrl_ctxt || !amc_ctrl_ctxt->gcq_payload_base_virt_addr)
+        return 0;
+
+    flags = ioread32(amc_ctrl_ctxt->gcq_payload_base_virt_addr + amc_ctrl_ctxt->amc_shared_mem.status.amc_status_off);
+    amc_ctrl_ctxt->amc_status_flags = flags;
+    return flags;
+}
+
 /**
  * gcq_device_is_ready() - check that the GCQ is ready.
  * @amc_ctrl_ctxt: AMC data struct instance.
@@ -313,6 +325,7 @@ bool gcq_device_is_ready(struct amc_control_ctxt *amc_ctrl_ctxt)
                           amc_ctrl_ctxt->amc_shared_mem.status.amc_status_off);
 
             AMI_VDBG(amc_ctrl_ctxt, "Device status value : %x", amc_status);
+            amc_ctrl_ctxt->amc_status_flags = amc_status;
             if (amc_status) {
                 AMI_VDBG(amc_ctrl_ctxt,
                      "AMC GCQ service ready after %d ms",
@@ -977,6 +990,19 @@ static int heartbeat_health_thread(void *data)
     }
 
     while (1) {
+        /*
+         * Suppress heartbeat traffic until firmware has entered its main loop.
+         * During the init/EEPROM-block window the firmware can't answer GCQ heartbeats, and treating that as a
+         * failure raises spurious AMC_EVENT_ID_HEARTBEAT_* events.
+         */
+        if (amc_ctxt &&
+            !(read_amc_status_flags(amc_ctxt) & AMC_STATUS_MAIN_RUNNING)) {
+            msleep(HEARTBEAT_REQUEST_INTERVAL);
+            if (kthread_should_stop())
+                break;
+            continue;
+        }
+
         if (!fatal_event_raised && (fail_count < HEARTBEAT_FAIL_THRESHOLD)) {
             ret = submit_gcq_command(amc_ctxt,
                          GCQ_SUBMIT_CMD_GET_HEARTBEAT,

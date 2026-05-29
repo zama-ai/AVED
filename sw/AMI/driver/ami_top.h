@@ -27,6 +27,7 @@
 #define STATE_NAME_MISSING_INFO "MISSING_INFO"
 #define STATE_NAME_NO_AMC     	"NO_AMC"
 #define STATE_NAME_INIT_ERROR 	"INIT_ERROR"
+#define STATE_NAME_EEPROM_ERROR	"EEPROM_ERROR"
 #define STATE_NAME_SHUTDOWN   	"SHUTDOWN"
 #define STATE_NAME_COMPAT     	"COMPAT"
 
@@ -37,6 +38,7 @@
  * @PF_DEV_STATE_MISSING_INFO: AMC setup and device may be used, but with some missing data.
  * @PF_DEV_STATE_NO_AMC: Device may be used but has no AMC instance.
  * @PF_DEV_STATE_INIT_ERROR: AMC setup and device may be used but with no data.
+ * @PF_DEV_STATE_EEPROM_ERROR: EEPROM/I2C unreachable; sensors and mfg data unavailable but compute path works.
  * @PF_DEV_STATE_SHUTDOWN: All services have been shutdown.
  * @PF_DEV_STATE_COMPAT: Compatibility mode - most functions unavailable.
  *
@@ -49,6 +51,7 @@ enum pf_dev_state {
 	PF_DEV_STATE_MISSING_INFO,
 	PF_DEV_STATE_NO_AMC,
 	PF_DEV_STATE_INIT_ERROR,
+	PF_DEV_STATE_EEPROM_ERROR,
 	PF_DEV_STATE_SHUTDOWN,
 	PF_DEV_STATE_COMPAT
 };
