@@ -1003,8 +1003,6 @@ static int heartbeat_health_thread(void *data)
     }
 
     while (1) {
-<<<<<<< Updated upstream
-=======
         /*
          * Suppress heartbeat traffic until firmware has entered its main loop.
          * During the init/EEPROM-block window the firmware can't answer GCQ heartbeats, and treating that as a
@@ -1017,7 +1015,6 @@ static int heartbeat_health_thread(void *data)
             continue;
         }
 
->>>>>>> Stashed changes
         if (!fatal_event_raised && (fail_count < HEARTBEAT_FAIL_THRESHOLD)) {
             ret = submit_gcq_command(amc_ctxt,
                          GCQ_SUBMIT_CMD_GET_HEARTBEAT,
