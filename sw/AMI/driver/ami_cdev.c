@@ -188,9 +188,11 @@ long dev_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         break;
 
     /*
-     * Compute path: register access + work submission.
-     * READY, MISSING_INFO, or EEPROM_ERROR.
-     * EEPROM_ERROR: I2C/EEPROM is broken but BAR0 / GCQ / IOp queue all work.
+     * GCQ/BAR-only operations:
+     * register access, work submission, and firmware debug verbosity.
+     * None of these touch the I2C/EEPROM sensor hub, so they stay allowed in EEPROM_ERROR
+     * (where BAR0 / GCQ / IOp queue all work but I2C/EEPROM is broken).
+     * Allowed in READY, MISSING_INFO, or EEPROM_ERROR.
      */
     case AMI_IOC_PEEK:
     case AMI_IOC_POKE:
@@ -208,9 +210,8 @@ long dev_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         break;
 
     /*
-     * Sensor / EEPROM / FPT access: requires healthy I2C and EEPROM.
-     * READY or MISSING_INFO only
-     * explicitly excludes EEPROM_ERROR so userspace gets immediate -EPERM instead of a deep firmware timeout.
+     * Sensor / EEPROM / FPT access: requires healthy I2C and EEPROM (READY or MISSING_INFO).
+     * Explicitly excludes EEPROM_ERROR so userspace gets immediate -EPERM instead of a deep firmware timeout.
      */
     case AMI_IOC_GET_SENSOR_VALUE:
     case AMI_IOC_COPY_PARTITION:

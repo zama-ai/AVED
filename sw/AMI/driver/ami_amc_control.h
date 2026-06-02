@@ -711,7 +711,10 @@ struct amc_control_ctxt {
     bool                    compat_mode;
 };
 
-/* AMC status flag bits (mirror of firmware HAL_AMC_STATUS_*). */
+/*
+ * AMC status flag bits (mirror of firmware HAL_AMC_STATUS_*).
+ * Only EEPROM_FAILED/MAIN_RUNNING are really decoded; the others are debug/transient.
+ */
 #define AMC_STATUS_COMMS_READY      (1U << 0)
 #define AMC_STATUS_I2C_OK           (1U << 1)
 #define AMC_STATUS_EEPROM_OK        (1U << 2)
