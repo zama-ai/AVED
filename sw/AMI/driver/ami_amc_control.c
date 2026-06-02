@@ -47,6 +47,7 @@ static DEFINE_XARRAY_ALLOC(cid_xarray);
 #define REQUEST_HEARTBEAT_TIMEOUT               (msecs_to_jiffies(500))         /* 0.5 seconds */
 #define HEARTBEAT_REQUEST_INTERVAL              (5000)
 #define LOGGING_SLEEP_INTERVAL                  (500)
+#define AMC_STOP_POLL_INTERVAL_MS               (50)
 
 
 /* AMC Identify Command Version Major and Minor Numbers */
