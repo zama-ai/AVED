@@ -47,6 +47,7 @@ static DEFINE_XARRAY_ALLOC(cid_xarray);
 #define REQUEST_HEARTBEAT_TIMEOUT               (msecs_to_jiffies(500))         /* 0.5 seconds */
 #define HEARTBEAT_REQUEST_INTERVAL              (5000)
 #define LOGGING_SLEEP_INTERVAL                  (500)
+#define AMC_STOP_POLL_INTERVAL_MS               (50)
 
 
 /* AMC Identify Command Version Major and Minor Numbers */
@@ -967,6 +968,32 @@ void release_amc(struct amc_control_ctxt **amc_ctrl_ctxt)
  *
  * Return: the errno return code if thread exits
  */
+
+/**
+ * amc_sleep_or_stop() - Sleep up to @msecs, returning early the moment a stop is
+ * requested.
+ * Unlike a bare msleep() (uninterruptible, so kthread_stop() must wait out the whole interval),
+ * this polls kthread_should_stop() every AMC_STOP_POLL_INTERVAL_MS, so teardown and rmmod is prompt.
+ * @msecs: maximum time to sleep, in milliseconds.
+ *
+ * Return: true if a stop was requested (caller should break its loop), else false.
+ */
+static bool amc_sleep_or_stop(unsigned int msecs)
+{
+    // Only return on timeout once the full interval has elapsed.
+    // the sleep sets the thread's polling cadence, so cutting it short would busy-loop the GCQ mailbox.
+    unsigned long deadline = jiffies + msecs_to_jiffies(msecs);
+
+    while (!kthread_should_stop()) {
+        // have we slept long enough?
+        if (time_after_eq(jiffies, deadline))
+            return false;
+        msleep(AMC_STOP_POLL_INTERVAL_MS); // sleeping by small chunks to quit early
+    }
+
+    return true;
+}
+
 static int heartbeat_health_thread(void *data)
 {
     struct amc_control_ctxt *amc_ctxt = NULL;
@@ -1030,10 +1057,8 @@ static int heartbeat_health_thread(void *data)
             }
         }
 
-        msleep(HEARTBEAT_REQUEST_INTERVAL);
-
         /* only exit from the thread is within the unset_amc context */
-        if (kthread_should_stop())
+        if (amc_sleep_or_stop(HEARTBEAT_REQUEST_INTERVAL))
             break;
     }
     return 0;
@@ -1076,10 +1101,8 @@ static int logging_thread(void *data)
     while (1) {
         if (logging_failed == false)
             dump_amc_log(amc_ctxt);
-        msleep(LOGGING_SLEEP_INTERVAL);
-
         /* only exit from the thread is within the unset_amc context */
-        if (kthread_should_stop())
+        if (amc_sleep_or_stop(LOGGING_SLEEP_INTERVAL))
             break;
     }
     return 0;
