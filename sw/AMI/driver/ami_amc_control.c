@@ -239,6 +239,17 @@ int get_aid(int cmd_req, int flags)
     return id;
 }
 
+uint32_t read_amc_status_flags(struct amc_control_ctxt *amc_ctrl_ctxt)
+{
+    uint32_t flags = 0;
+
+    if (!amc_ctrl_ctxt || !amc_ctrl_ctxt->gcq_payload_base_virt_addr)
+        return 0;
+
+    flags = ioread32(amc_ctrl_ctxt->gcq_payload_base_virt_addr + amc_ctrl_ctxt->amc_shared_mem.status.amc_status_off);
+    return flags;
+}
+
 /**
  * gcq_device_is_ready() - check that the GCQ is ready.
  * @amc_ctrl_ctxt: AMC data struct instance.

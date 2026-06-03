@@ -263,6 +263,22 @@ static int create_pf_dev_data(struct pci_dev *dev)
         }
 
     /*
+     * If the firmware reports EEPROM_FAILED via the ready beacon, skip sensor discovery entirely:
+     * Otherwise SDR fetch would just time out and leave GCQ channel in a poisoned state.
+     * Compute path stays usable.
+     *
+     * Gate on state == INIT: COMPAT must not be downgraded to EEPROM_ERROR
+     * (COMPAT is the stronger restriction and its status bits aren't trustworthy across AMC versions),
+     * and NO_AMC is already short-circuited by the amc_ctrl_ctxt NULL check below.
+     */
+    if (pf_dev->state == PF_DEV_STATE_INIT && pf_dev->amc_ctrl_ctxt &&
+        (read_amc_status_flags(pf_dev->amc_ctrl_ctxt) & AMC_STATUS_EEPROM_FAILED)) {
+        DEV_INFO(dev, "Firmware reports EEPROM_FAILED: skipping sensor discovery");
+        pf_dev->state = PF_DEV_STATE_EEPROM_ERROR;
+        goto skip_sensors;
+    }
+
+    /*
      * Attempt sensor discovery only if AMC was initialised correctly.
      * COMPAT MODE: No sensor data and no hwmon entries.
      */
@@ -279,10 +295,15 @@ static int create_pf_dev_data(struct pci_dev *dev)
             if (ret)
                 goto remove_pf_dev;
         } else {
-            pf_dev->state = PF_DEV_STATE_INIT_ERROR;
+            /*
+             * Sensor discovery typically fails because the firmware can't reach the EEPROM/I2C sensor hub.
+             * Compute path (BAR0 register access, IOp queue) is unaffected, so allow PEEK/POKE/IOP_PUSH IOCTLs.
+             */
+            pf_dev->state = PF_DEV_STATE_EEPROM_ERROR;
         }
     }
 
+skip_sensors:
     /*
      * Create extra sysfs attributes.
      * COMPAT MODE: sysfs allowed.

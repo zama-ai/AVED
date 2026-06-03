@@ -711,6 +711,23 @@ struct amc_control_ctxt {
     bool                    compat_mode;
 };
 
+/*
+ * AMC status flag bits (mirror of firmware HAL_AMC_STATUS_*).
+ * Only EEPROM_FAILED/MAIN_RUNNING are really decoded; the others are debug/transient.
+ */
+#define AMC_STATUS_COMMS_READY      (1U << 0)
+#define AMC_STATUS_I2C_OK           (1U << 1)
+#define AMC_STATUS_EEPROM_OK        (1U << 2)
+#define AMC_STATUS_EEPROM_FAILED    (1U << 3)
+#define AMC_STATUS_SENSORS_OK       (1U << 4)
+#define AMC_STATUS_MAIN_RUNNING     (1U << 5)
+
+/**
+ * read_amc_status_flags() - Read the live firmware status word via BAR.
+ * Returns the current value, or 0 if the GCQ payload isn't mapped yet.
+ */
+uint32_t read_amc_status_flags(struct amc_control_ctxt *amc_ctrl_ctxt);
+
 
 /******************************************************************************************/
 /* Public Functions                                                                       */
