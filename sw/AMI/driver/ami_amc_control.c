@@ -1022,23 +1022,21 @@ static int heartbeat_health_thread(void *data)
                          &response_id,
                          sizeof(response_id));
             if (ret) {
-                PR_ERR("Failed to get the heartbeat msg!");
+                PR_WARN("Failed to get the heartbeat msg!");
                 if (amc_ctxt->event_cb) {
                     amc_ctxt->event_cb(
                         AMC_EVENT_ID_HEARTBEAT_EXPIRED,
                         amc_ctxt->event_cb_data
                     );
                 }
-                fail_count++;
             } else if (response_id != request_id) {
-                PR_ERR("Heartbeat validation failed!");
+                PR_WARN("Heartbeat validation failed!");
                 if (amc_ctxt->event_cb) {
                     amc_ctxt->event_cb(
                         AMC_EVENT_ID_HEARTBEAT_VALIDATION,
                         amc_ctxt->event_cb_data
                     );
                 }
-                fail_count++;
             } else {
                 /* Reset fail count */
                 fail_count = 0;
