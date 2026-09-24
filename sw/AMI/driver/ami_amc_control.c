@@ -1022,7 +1022,6 @@ static int heartbeat_health_thread(void *data)
                          &response_id,
                          sizeof(response_id));
             if (ret) {
-                PR_WARN("Failed to get the heartbeat msg!");
                 if (amc_ctxt->event_cb) {
                     amc_ctxt->event_cb(
                         AMC_EVENT_ID_HEARTBEAT_EXPIRED,
@@ -1644,7 +1643,7 @@ int submit_gcq_command(struct amc_control_ctxt    *amc_ctrl_ctxt,
     }
 
     if (amc_proxy_cmd->timed_out) {
-        AMI_ERR(amc_ctrl_ctxt, "Submitted command timed out");
+        AMI_WARN(amc_ctrl_ctxt, "Submitted command timed out");
         amc_proxy_request_abort(amc_proxy_cmd);
         ret = -ETIMEDOUT;
         goto done;

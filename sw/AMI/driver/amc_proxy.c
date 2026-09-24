@@ -609,7 +609,7 @@ static void amc_proxy_cmd_complete(struct amc_proxy_instance *inst, struct com_q
         }
     }
 
-    PR_ERR("No matching cid %d found, unexpected response", ccmd->hdr.cid);
+    PR_WARN("No matching cid %d found, unexpected response", ccmd->hdr.cid);
     mutex_unlock(&(inst->lock));
 }
 
@@ -663,7 +663,7 @@ static void amc_proxy_submitted_cmds_drain(struct amc_proxy_instance *inst)
                         list_del(pos);
 
                         cmd->cmd_rcode = -ETIME;
-                        PR_CRIT_WARN("cmd id: %d timed out(drain), hot reset is required", cmd->cmd_cid);
+                        PR_WARN("cmd id: %d timed out(drain)", cmd->cmd_cid);
 
                         if (inst->event_cb) {
                                 inst->event_cb(inst->proxy_id,
@@ -729,7 +729,7 @@ static void amc_proxy_submitted_cmd_check_timeout(struct amc_proxy_instance *ins
                 /* Finding timed out cmds */
                 if (time_before(cmd->cmd_timeout_jiffies, jiffies)) {
 
-                        PR_CRIT_WARN("cmd id: %d timed out(timeout), hot reset is required", cmd->cmd_cid);
+                        PR_WARN("cmd id: %d timed out(timeout)", cmd->cmd_cid);
                         cmd->cmd_rcode = -ETIME;
                         if (inst->event_cb) {
                                 inst->event_cb(inst->proxy_id,

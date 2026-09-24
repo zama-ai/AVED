@@ -113,7 +113,7 @@ static void amc_event_cb(enum amc_event_id id, void *data)
 {
     switch (id) {
     case AMC_EVENT_ID_HEARTBEAT_EXPIRED:
-        PR_ERR("AMC Heartbeat expired event received");
+        PR_WARN("AMC Heartbeat expired event received");
         break;
 
     case AMC_EVENT_ID_HEARTBEAT_VALIDATION:
