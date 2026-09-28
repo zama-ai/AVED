@@ -1022,23 +1022,20 @@ static int heartbeat_health_thread(void *data)
                          &response_id,
                          sizeof(response_id));
             if (ret) {
-                PR_ERR("Failed to get the heartbeat msg!");
                 if (amc_ctxt->event_cb) {
                     amc_ctxt->event_cb(
                         AMC_EVENT_ID_HEARTBEAT_EXPIRED,
                         amc_ctxt->event_cb_data
                     );
                 }
-                fail_count++;
             } else if (response_id != request_id) {
-                PR_ERR("Heartbeat validation failed!");
+                PR_WARN("Heartbeat validation failed!");
                 if (amc_ctxt->event_cb) {
                     amc_ctxt->event_cb(
                         AMC_EVENT_ID_HEARTBEAT_VALIDATION,
                         amc_ctxt->event_cb_data
                     );
                 }
-                fail_count++;
             } else {
                 /* Reset fail count */
                 fail_count = 0;
@@ -1646,7 +1643,7 @@ int submit_gcq_command(struct amc_control_ctxt    *amc_ctrl_ctxt,
     }
 
     if (amc_proxy_cmd->timed_out) {
-        AMI_ERR(amc_ctrl_ctxt, "Submitted command timed out");
+        AMI_WARN(amc_ctrl_ctxt, "Submitted command timed out");
         amc_proxy_request_abort(amc_proxy_cmd);
         ret = -ETIMEDOUT;
         goto done;
