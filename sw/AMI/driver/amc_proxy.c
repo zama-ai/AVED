@@ -850,7 +850,7 @@ static int complete_response_thread(void *data)
                         iopAck = kzalloc(ackq_used_words * sizeof(uint32_t), GFP_KERNEL);
                         if (iopAck == NULL) {
                           PR_ERR("ackq: allocation of %u words failed", ackq_used_words);
-                          continue;
+                          break;
                         }
                         iop_ack_table = iopAck;
                         iop_ack_table_size = ackq_used_words;
