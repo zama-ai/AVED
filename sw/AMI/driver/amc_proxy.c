@@ -773,6 +773,11 @@ static int complete_response_thread(void *data)
         struct   pf_dev_struct *pf_dev;
         ack_proc_file *currentAckProcFile;
         atomic_t      *iop_ack_cnt_atomic;
+        /* ack queue checks */
+        uint32_t last_tail_written = 0;
+        bool tail_written = false;
+        char ackq_msg[160];
+        int msg_len;
 
         if (!data) {
                 PR_ERR("Response thread null data arg");
@@ -806,6 +811,19 @@ static int complete_response_thread(void *data)
                 ackq_tail = ioread32(amc_proxy_inst->amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOPACK_ADDR_TAIL);
                 ackq_used_words = ackq_head - ackq_tail;
 
+                /* only this thread writes the tail: reading back anything else than
+                 * the last value written means that write was not visible yet (or was lost) */
+                if (tail_written && ackq_tail != last_tail_written) {
+                        PR_ERR("ackq STALE TAIL: read tail 0x%x but last written 0x%x (head 0x%x)",
+                               ackq_tail, last_tail_written, ackq_head);
+                }
+                /* A head behind the tail or a jump bigger than the queue is not a valid state */
+                if (ackq_used_words > AMC_IOPACK_MAX_WORDS) {
+                        PR_ERR("ackq INVALID: head 0x%x tail 0x%x -> used %u, skipped",
+                               ackq_head, ackq_tail, ackq_used_words);
+                        ackq_used_words = 0;
+                }
+
                 if (ackq_used_words > 0) {
                         PR_DBG("Ack queue: head 0x%x tail 0x%x -> {used %d}", ackq_head, ackq_tail, ackq_used_words);
 
@@ -830,6 +848,10 @@ static int complete_response_thread(void *data)
 
                         // Allocate Ackq Buffer
                         iopAck = kzalloc(ackq_used_words * sizeof(uint32_t), GFP_KERNEL);
+                        if (iopAck == NULL) {
+                          PR_ERR("ackq: allocation of %u words failed", ackq_used_words);
+                          break;
+                        }
                         iop_ack_table = iopAck;
                         iop_ack_table_size = ackq_used_words;
 
@@ -845,20 +867,31 @@ static int complete_response_thread(void *data)
                                       chunk_size * sizeof(uint32_t));
                         }
                         if (wrap_chunk_size > 0) {
-                            memcpy_fromio(iopAck,
+                            memcpy_fromio(iopAck + chunk_size,
                                       (void __iomem *)(amc_proxy_inst->amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOPACK_ADDR_DATA_START),
                                       wrap_chunk_size * sizeof(uint32_t));
-                        }
-                        for (i = 0; i < iop_ack_table_size; i++) {
-                            PR_DBG("iopAck[%d] = 0x%x", i, iop_ack_table[i]);
                         }
                         atomic_add(iop_ack_table_size, iop_ack_cnt_atomic);
 
                         // Acknowledge queue consumption
                         ackq_tail += ackq_used_words;
                         iowrite32(ackq_tail, amc_proxy_inst->amc_ctrl_ctxt->gcq_payload_base_virt_addr + AMC_IOPACK_ADDR_TAIL);
+                        last_tail_written = ackq_tail;
+                        tail_written = true;
+
+                        msg_len = 0;
+                        for (i = 0; i < iop_ack_table_size && i < 8; i++) {
+                            msg_len += scnprintf(ackq_msg + msg_len, sizeof(ackq_msg) - msg_len,
+                                                 " %08x", iop_ack_table[i]);
+                        }
+                        if (iop_ack_table_size > 8) {
+                            scnprintf(ackq_msg + msg_len, sizeof(ackq_msg) - msg_len,
+                                      " +%u", iop_ack_table_size - 8);
+                        }
+                        PR_DBG("ackq dev %u head 0x%x tail 0x%x->0x%x used %u:%s",
+                                cdev_num, ackq_head, ackq_tail - ackq_used_words, ackq_tail,
+                                ackq_used_words, ackq_msg);
                         kfree(iopAck);
-                        PR_INFO("added %d to iop_ack_cnt_atomic of device %d", iop_ack_table_size, cdev_num);
                 }
 
                 /* Check if a stop has been requested */

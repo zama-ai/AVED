@@ -45,7 +45,7 @@
 #define AMC_IOPACK_ADDR_OFF                      (0x200000)
 #define AMC_IOPACK_ADDR_HEAD                     (0x200000)
 #define AMC_IOPACK_ADDR_DATA_START               (0x200004)
-#define AMC_IOPACK_ADDR_TAIL                     (0x210004)
+#define AMC_IOPACK_ADDR_TAIL                     (0x210040)
 #define AMC_IOPACK_MAX_WORDS                     (0x4000)
 
 #define SENSOR_RSP_LEN                           (4096)
